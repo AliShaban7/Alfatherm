@@ -18,10 +18,10 @@ module.exports = {
 
   // Product Categories
   PRODUCT_CATEGORIES: {
-    ELECTRIC: 'Elektrik',
-    HEATING: 'İsidici',
-    BATHROOM: 'Hamam',
-    GENERAL: 'Ümumi'
+    ELECTRIC: 'electric',
+    HEATING: 'heating',
+    BATHROOM: 'bathroom',
+    GENERAL: 'general'
   },
 
   // Product Units

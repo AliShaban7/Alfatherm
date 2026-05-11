@@ -13,5 +13,6 @@ router.use('/expenses', require('./expense.routes'));
 router.use('/reports', require('./report.routes'));
 router.use('/branches', require('./branch.routes'));
 router.use('/warehouses', require('./warehouse.routes'));
+router.use('/categories', require('./category.routes'));
 
 module.exports = router;

@@ -3,5 +3,6 @@ module.exports = {
   productValidator: require('./product.validator'),
   saleValidator: require('./sale.validator'),
   customerValidator: require('./customer.validator'),
-  inventoryValidator: require('./inventory.validator')
+  inventoryValidator: require('./inventory.validator'),
+  categoryValidator: require('./category.validator')
 };

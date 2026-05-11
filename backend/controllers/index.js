@@ -10,5 +10,6 @@ module.exports = {
   expenseController: require('./expense.controller'),
   reportController: require('./report.controller'),
   branchController: require('./branch.controller'),
-  warehouseController: require('./warehouse.controller')
+  warehouseController: require('./warehouse.controller'),
+  categoryController: require('./category.controller')
 };
