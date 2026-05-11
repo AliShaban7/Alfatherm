@@ -2,6 +2,23 @@
 
 Santexnik mağazası üçün tam funksional idarəetmə sistemi.
 
+## Texnologiyalar
+
+### Backend
+
+- Node.js + Express.js
+- MongoDB + Mongoose
+- JWT Authentication
+- bcryptjs (şifrə hash)
+
+### Frontend
+
+- React 18
+- React Router v6
+- Axios
+- React Toastify
+- Vite
+
 ## Xüsusiyyətlər
 
 ### Modullar
@@ -26,11 +43,6 @@ Santexnik mağazası üçün tam funksional idarəetmə sistemi.
 
 - Yalnız Owner və Super Owner görə bilər
 - API cavablarından avtomatik silinir
-
-### Əsas Anbar
-
-- Yalnız Super Owner-lər daxil ola bilər
-- Transfer və mal girişi məhdudlaşdırılıb
 
 ### VÖEN Unikalıq
 
