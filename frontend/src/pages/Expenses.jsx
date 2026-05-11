@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FiPlus, FiEdit2, FiTrash2 } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiFilter } from 'react-icons/fi';
 import { expenseAPI, branchAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { format } from 'date-fns';
@@ -22,7 +22,6 @@ const Expenses = () => {
   const [branchFilter, setBranchFilter] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
-  const [summary, setSummary] = useState(null);
 
   const [formData, setFormData] = useState({
     branchId: '',
@@ -43,14 +42,12 @@ const Expenses = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [expensesRes, branchesRes, summaryRes] = await Promise.all([
+      const [expensesRes, branchesRes] = await Promise.all([
         expenseAPI.getAll({ category: categoryFilter, branchId: branchFilter }),
-        branchAPI.getAll(),
-        expenseAPI.getSummaryByCategory()
+        branchAPI.getAll()
       ]);
       setExpenses(expensesRes.data.expenses);
       setBranches(branchesRes.data.data);
-      setSummary(summaryRes.data.data);
     } catch (error) {
       toast.error('Məlumatları yükləmək mümkün olmadı');
     } finally {
@@ -61,11 +58,19 @@ const Expenses = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      const submitData = { ...formData };
+      
+      // Auto-generate receipt number if empty
+      if (!submitData.receiptNumber && !editingExpense) {
+        const timestamp = Date.now().toString().slice(-8);
+        submitData.receiptNumber = `QBZ-${timestamp}`;
+      }
+      
       if (editingExpense) {
-        await expenseAPI.update(editingExpense._id, formData);
+        await expenseAPI.update(editingExpense._id, submitData);
         toast.success('Xərc yeniləndi');
       } else {
-        await expenseAPI.create(formData);
+        await expenseAPI.create(submitData);
         toast.success('Xərc əlavə edildi');
       }
       setShowModal(false);
@@ -124,73 +129,101 @@ const Expenses = () => {
     }).format(amount) + ' AZN';
   };
 
+  const getTotalAmount = () => {
+    return expenses.reduce((sum, expense) => sum + expense.amount, 0);
+  };
+
   return (
     <div>
       <div className="page-header">
         <div>
           <h1 className="page-title">Xərclər</h1>
+          <p className="page-subtitle">Xərc idarəetməsi</p>
         </div>
         <button className="btn btn-primary" onClick={() => { resetForm(); setShowModal(true); }}>
           <FiPlus /> Yeni Xərc
         </button>
       </div>
 
-      {summary && (
-        <div className="card" style={{ marginBottom: '1.5rem', overflow: 'hidden', padding: 0 }}>
-          <div style={{
-            background: 'var(--primary)',
-            color: 'white',
-            padding: '0.75rem 1rem',
-            fontWeight: 600,
-            fontSize: '0.9375rem'
-          }}>
-            Xərc Xülasəsi
-          </div>
-          <div style={{ padding: '1rem' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem' }}>
-              <div style={{ textAlign: 'center', padding: '0.75rem', background: '#fef2f2', borderRadius: '8px' }}>
-                <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#dc2626' }}>
-                  {formatCurrency(summary.total || 0)}
-                </div>
-                <div style={{ color: '#991b1b', fontSize: '0.8125rem', marginTop: '0.25rem' }}>Toplam Xərc</div>
-              </div>
-              {summary.byCategory?.slice(0, 5).map(cat => (
-                <div key={cat._id} style={{ textAlign: 'center', padding: '0.75rem', background: '#f9fafb', borderRadius: '8px' }}>
-                  <div style={{ fontWeight: 600, fontSize: '1rem' }}>{formatCurrency(cat.totalAmount)}</div>
-                  <div style={{ color: '#6b7280', fontSize: '0.8125rem', marginTop: '0.25rem' }}>
-                    {EXPENSE_CATEGORIES.find(c => c.value === cat._id)?.label || cat._id}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="card">
-        <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center',
+          gap: '0.75rem', 
+          marginBottom: '1.25rem', 
+          flexWrap: 'wrap',
+          padding: '0.75rem',
+          background: '#f9fafb',
+          borderRadius: '8px',
+          border: '1px solid #e5e7eb'
+        }}>
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '0.5rem',
+            color: '#6b7280',
+            fontWeight: 500,
+            fontSize: '0.875rem'
+          }}>
+            <FiFilter />
+            <span>Filtrlər:</span>
+          </div>
+          
           <select
             className="form-control"
-            style={{ width: 'auto' }}
+            style={{ 
+              width: 'auto',
+              minWidth: '180px',
+              border: '1px solid #d1d5db',
+              borderRadius: '6px',
+              padding: '0.5rem 0.75rem',
+              fontSize: '0.875rem',
+              background: 'white'
+            }}
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
           >
-            <option value="">Bütün kateqoriyalar</option>
+            <option value="">📁 Bütün kateqoriyalar</option>
             {EXPENSE_CATEGORIES.map(cat => (
               <option key={cat.value} value={cat.value}>{cat.label}</option>
             ))}
           </select>
+          
           <select
             className="form-control"
-            style={{ width: 'auto' }}
+            style={{ 
+              width: 'auto',
+              minWidth: '180px',
+              border: '1px solid #d1d5db',
+              borderRadius: '6px',
+              padding: '0.5rem 0.75rem',
+              fontSize: '0.875rem',
+              background: 'white'
+            }}
             value={branchFilter}
             onChange={(e) => setBranchFilter(e.target.value)}
           >
-            <option value="">Bütün filiallar</option>
+            <option value="">🏢 Bütün filiallar</option>
             {branches.map(b => (
               <option key={b._id} value={b._id}>{b.name}</option>
             ))}
           </select>
+          
+          {(categoryFilter || branchFilter) && (
+            <button 
+              className="btn btn-sm btn-secondary"
+              style={{ 
+                fontSize: '0.8125rem',
+                padding: '0.4rem 0.75rem'
+              }}
+              onClick={() => {
+                setCategoryFilter('');
+                setBranchFilter('');
+              }}
+            >
+              Təmizlə
+            </button>
+          )}
         </div>
 
         {loading ? (
@@ -211,7 +244,16 @@ const Expenses = () => {
                   <th>Kateqoriya</th>
                   <th>Qeyd</th>
                   <th>Filial</th>
-                  <th>Məbləğ</th>
+                  <th>
+                    Məbləğ 
+                    <span style={{ 
+                      marginLeft: '0.5rem', 
+                      color: '#dc2626', 
+                      fontWeight: 700 
+                    }}>
+                      ({formatCurrency(getTotalAmount())})
+                    </span>
+                  </th>
                   <th>Metod</th>
                   <th></th>
                 </tr>
@@ -345,6 +387,7 @@ const Expenses = () => {
                       className="form-control"
                       value={formData.receiptNumber}
                       onChange={(e) => setFormData({ ...formData, receiptNumber: e.target.value })}
+                      placeholder="Boş buraxılsa avtomatik yaradılacaq"
                     />
                   </div>
                 </div>

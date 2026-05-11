@@ -1,15 +1,8 @@
 import { useState, useEffect } from 'react';
 import { FiPlus, FiSearch, FiEdit2, FiTrash2 } from 'react-icons/fi';
-import { productAPI } from '../services/api';
+import { productAPI, categoryAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
-
-const CATEGORIES = [
-  { value: 'Elektrik', label: 'Elektrik' },
-  { value: 'Isidici', label: 'İsidici' },
-  { value: 'Hamam', label: 'Hamam' },
-  { value: 'Ümumi', label: 'Ümumi' }
-];
 
 const UNITS = [
   { value: 'eded', label: 'Ədəd' },
@@ -24,6 +17,7 @@ const UNITS = [
 
 const Products = () => {
   const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
@@ -47,8 +41,18 @@ const Products = () => {
   });
 
   useEffect(() => {
+    fetchCategories();
     fetchProducts();
   }, [category]);
+
+  const fetchCategories = async () => {
+    try {
+      const response = await categoryAPI.getAll({ type: 'product' });
+      setCategories(response.data.data);
+    } catch (error) {
+      console.error('Kateqoriyaları yükləmək mümkün olmadı');
+    }
+  };
 
   const fetchProducts = async () => {
     try {
@@ -173,8 +177,8 @@ const Products = () => {
             onChange={(e) => setCategory(e.target.value)}
           >
             <option value="">Bütün kateqoriyalar</option>
-            {CATEGORIES.map(cat => (
-              <option key={cat.value} value={cat.value}>{cat.label}</option>
+            {categories.map(cat => (
+              <option key={cat.code} value={cat.code}>{cat.name}</option>
             ))}
           </select>
           <button type="submit" className="btn btn-secondary">Axtar</button>
@@ -209,7 +213,7 @@ const Products = () => {
                     <td><code>{product.sku}</code></td>
                     <td>
                       <span className="badge badge-secondary">
-                        {CATEGORIES.find(c => c.value === product.category)?.label || product.category}
+                        {categories.find(c => c.code === product.category)?.name || product.category}
                       </span>
                     </td>
                     <td>{product.brand || '-'}</td>
@@ -275,8 +279,9 @@ const Products = () => {
                       onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                       required
                     >
-                      {CATEGORIES.map(cat => (
-                        <option key={cat.value} value={cat.value}>{cat.label}</option>
+                      <option value="">Seçin...</option>
+                      {categories.map(cat => (
+                        <option key={cat.code} value={cat.code}>{cat.name}</option>
                       ))}
                     </select>
                   </div>

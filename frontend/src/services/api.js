@@ -135,4 +135,11 @@ export const warehouseAPI = {
   delete: (id) => api.delete(`/warehouses/${id}`)
 };
 
+export const categoryAPI = {
+  getAll: (params) => api.get('/categories', { params }),
+  create: (data) => api.post('/categories', data),
+  update: (id, data) => api.put(`/categories/${id}`, data),
+  delete: (id) => api.delete(`/categories/${id}`)
+};
+
 export default api;
