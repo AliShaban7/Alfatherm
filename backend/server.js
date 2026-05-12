@@ -32,15 +32,7 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Alfaterm API is running' });
 });
 
-app.get('/health', (req, res) => {
-  res.json({ status: 'OK', message: 'Alfaterm API is running' });
-});
-
-// Mount routes at /api for local dev, and at root for Vercel (prefix stripped by routePrefix)
 app.use('/api', routes);
-if (process.env.VERCEL) {
-  app.use('/', routes);
-}
 
 app.use((req, res) => {
   res.status(404).json({
