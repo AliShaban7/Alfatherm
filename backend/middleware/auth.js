@@ -94,3 +94,14 @@ exports.canAccessMainWarehouse = (req, res, next) => {
   req.canAccessMainWarehouse = req.user.role === ROLES.OWNER || req.user.role === ROLES.SUPER_OWNER;
   next();
 };
+
+// Middleware to restrict employees (salespeople) from accessing owner-only features
+exports.employeeRestricted = (req, res, next) => {
+  if (req.user.role === ROLES.EMPLOYEE) {
+    return res.status(403).json({
+      success: false,
+      message: 'Bu bölməyə giriş icazəniz yoxdur'
+    });
+  }
+  next();
+};

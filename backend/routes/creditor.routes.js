@@ -1,10 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const { creditorController } = require('../controllers');
-const { protect, ownerOnly, ownerDataIsolation } = require('../middleware/auth');
+const { protect, ownerOnly, ownerDataIsolation, employeeRestricted } = require('../middleware/auth');
 
 router.use(protect);
 router.use(ownerDataIsolation);
+router.use(employeeRestricted); // Block employees from accessing creditors
 
 router.post('/', ownerOnly, creditorController.create);
 

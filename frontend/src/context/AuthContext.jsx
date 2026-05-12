@@ -53,13 +53,18 @@ export const AuthProvider = ({ children }) => {
     return user?.role === 'SUPER_OWNER';
   };
 
+  const isEmployee = () => {
+    return user?.role === 'EMPLOYEE';
+  };
+
   const value = {
     user,
     loading,
     login,
     logout,
     isOwner,
-    isSuperOwner
+    isSuperOwner,
+    isEmployee
   };
 
   return (

@@ -1,11 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const { reportController } = require('../controllers');
-const { protect, ownerOnly, canSeeCostPrice, ownerDataIsolation } = require('../middleware/auth');
+const { protect, ownerOnly, canSeeCostPrice, ownerDataIsolation, employeeRestricted } = require('../middleware/auth');
 
 router.use(protect);
 router.use(ownerDataIsolation);
 router.use(canSeeCostPrice);
+router.use(employeeRestricted); // Block all employees from accessing any reports
 
 router.get('/dashboard', reportController.getDashboard);
 
