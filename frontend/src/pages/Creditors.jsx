@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { FiPlus, FiDollarSign } from 'react-icons/fi';
+import { FiPlus, FiDollarSign, FiDownload } from 'react-icons/fi';
 import { creditorAPI, vendorAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { format } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
+import * as XLSX from 'xlsx';
 
 const STATUS_LABELS = {
   pending: { label: 'Gözləyir', class: 'badge-warning' },
@@ -110,6 +111,40 @@ const Creditors = () => {
     fetchVendors();
   }, [fetchVendors]);
 
+  const exportToExcel = () => {
+    if (!creditors.length) {
+      toast.warning('Eksport üçün məlumat yoxdur');
+      return;
+    }
+
+    const exportData = creditors.map((creditor, index) => ({
+      '#': index + 1,
+      'Vendor': creditor.vendor?.name || '',
+      'Təsvir': creditor.description || '',
+      'Tarix': format(new Date(creditor.createdAt), 'dd.MM.yyyy'),
+      'Toplam Məbləğ (AZN)': creditor.totalAmount,
+      'Ödənilmiş (AZN)': creditor.paidAmount || 0,
+      'Qalıq (AZN)': creditor.remainingAmount,
+      'Status': STATUS_LABELS[creditor.status]?.label || creditor.status,
+      'Son Ödəniş Tarixi': creditor.lastPaymentDate 
+        ? format(new Date(creditor.lastPaymentDate), 'dd.MM.yyyy')
+        : '-',
+      'Son Ödəniş Tarixi (Due Date)': creditor.dueDate 
+        ? format(new Date(creditor.dueDate), 'dd.MM.yyyy')
+        : '-'
+    }));
+
+    try {
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Kreditorlar');
+      XLSX.writeFile(wb, `kreditorlar_${new Date().toISOString().split('T')[0]}.xlsx`);
+      toast.success('Excel faylı yükləndi');
+    } catch (error) {
+      toast.error('Excel faylını yaratmaq mümkün olmadı');
+    }
+  };
+
   useEffect(() => {
     fetchData();
   }, [fetchData]);
@@ -121,7 +156,8 @@ const Creditors = () => {
         alignItems: 'center', 
         marginBottom: '1.5rem',
         flexWrap: 'wrap',
-        gap: '1rem'
+        gap: '1rem',
+        justifyContent: 'space-between'
       }}>
         <div>
           <h1 className="page-title">Kreditorlar</h1>
@@ -178,11 +214,28 @@ const Creditors = () => {
           </div>
         )}
         
-        {isOwner() && (
-          <button className="btn btn-primary" onClick={handleOpenModal}>
-            <FiPlus /> Yeni Borc
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <button 
+            className="btn" 
+            onClick={exportToExcel}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              background: '#10b981',
+              color: 'white',
+              border: 'none'
+            }}
+          >
+            <FiDownload /> Excel
           </button>
-        )}
+          
+          {isOwner() && (
+            <button className="btn btn-primary" onClick={handleOpenModal}>
+              <FiPlus /> Yeni Borc
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="card">

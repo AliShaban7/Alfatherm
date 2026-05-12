@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { FiPlus, FiSearch, FiEdit2, FiTrash2 } from 'react-icons/fi';
+import { FiPlus, FiSearch, FiEdit2, FiTrash2, FiDownload } from 'react-icons/fi';
 import { productAPI, categoryAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
+import * as XLSX from 'xlsx';
 
 const UNITS = [
   { value: 'eded', label: 'Ədəd' },
@@ -143,6 +144,39 @@ const Products = () => {
     }).format(amount) + ' AZN';
   };
 
+  const exportToExcel = () => {
+    if (!products.length) {
+      toast.warning('Eksport üçün məlumat yoxdur');
+      return;
+    }
+
+    const exportData = products.map((product, index) => ({
+      '#': index + 1,
+      'Məhsul Adı': product.name,
+      'SKU': product.sku,
+      'Kateqoriya': categories.find(c => c.code === product.category)?.name || product.category,
+      'Brend': product.brand || '',
+      'İstehsalçı': product.manufacturer || '',
+      'Ölkə': product.country || '',
+      'Ölçü vahidi': UNITS.find(u => u.value === product.unit)?.label || product.unit,
+      'Rəng': product.color || '',
+      ...(isOwner() && { 'Maya Dəyəri (AZN)': product.costPrice || 0 }),
+      'Minimum Qiymət (AZN)': product.minPrice || 0,
+      'Təklif olunan Qiymət (AZN)': product.recommendedPrice || 0,
+      'Təsvir': product.description || ''
+    }));
+
+    try {
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Məhsullar');
+      XLSX.writeFile(wb, `məhsullar_${new Date().toISOString().split('T')[0]}.xlsx`);
+      toast.success('Excel faylı yükləndi');
+    } catch (error) {
+      toast.error('Excel faylını yaratmaq mümkün olmadı');
+    }
+  };
+
   return (
     <div>
       <div className="page-header">
@@ -150,11 +184,27 @@ const Products = () => {
           <h1 className="page-title">Məhsullar</h1>
           <p className="page-subtitle">Məhsul kataloqu</p>
         </div>
-        {isOwner() && (
-          <button className="btn btn-primary" onClick={() => { resetForm(); setShowModal(true); }}>
-            <FiPlus /> Yeni Məhsul
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button 
+            className="btn" 
+            onClick={exportToExcel}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              background: '#10b981',
+              color: 'white',
+              border: 'none'
+            }}
+          >
+            <FiDownload /> Excel
           </button>
-        )}
+          {isOwner() && (
+            <button className="btn btn-primary" onClick={() => { resetForm(); setShowModal(true); }}>
+              <FiPlus /> Yeni Məhsul
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="card">

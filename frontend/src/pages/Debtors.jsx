@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { FiDollarSign, FiAlertCircle } from 'react-icons/fi';
+import { FiDollarSign, FiAlertCircle, FiDownload } from 'react-icons/fi';
 import { debtorAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { format } from 'date-fns';
+import * as XLSX from 'xlsx';
 
 const STATUS_LABELS = {
   pending: { label: 'Gözləyir', class: 'badge-warning' },
@@ -65,6 +66,37 @@ const Debtors = () => {
     setShowPaymentModal(true);
   }, []);
 
+  const exportToExcel = () => {
+    if (!debtors.length) {
+      toast.warning('Eksport üçün məlumat yoxdur');
+      return;
+    }
+
+    const exportData = debtors.map((debtor, index) => ({
+      '#': index + 1,
+      'Müştəri': debtor.customer?.name || debtor.customerName || '',
+      'Satış No': debtor.sale?.invoiceNumber || '',
+      'Tarix': format(new Date(debtor.createdAt), 'dd.MM.yyyy'),
+      'Toplam Məbləğ (AZN)': debtor.totalAmount,
+      'Ödənilmiş (AZN)': debtor.paidAmount || 0,
+      'Qalıq (AZN)': debtor.remainingAmount,
+      'Status': STATUS_LABELS[debtor.status]?.label || debtor.status,
+      'Son Ödəniş Tarixi': debtor.lastPaymentDate 
+        ? format(new Date(debtor.lastPaymentDate), 'dd.MM.yyyy')
+        : '-'
+    }));
+
+    try {
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Debitorlar');
+      XLSX.writeFile(wb, `debitorlar_${new Date().toISOString().split('T')[0]}.xlsx`);
+      toast.success('Excel faylı yükləndi');
+    } catch (error) {
+      toast.error('Excel faylını yaratmaq mümkün olmadı');
+    }
+  };
+
   useEffect(() => {
     fetchData();
   }, [fetchData]);
@@ -76,7 +108,8 @@ const Debtors = () => {
         alignItems: 'center', 
         marginBottom: '1.5rem',
         flexWrap: 'wrap',
-        gap: '1rem'
+        gap: '1rem',
+        justifyContent: 'space-between'
       }}>
         <div>
           <h1 className="page-title">Debitorlar</h1>
@@ -132,6 +165,22 @@ const Debtors = () => {
             </div>
           </div>
         )}
+        
+        <button 
+          className="btn" 
+          onClick={exportToExcel}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            background: '#10b981',
+            color: 'white',
+            border: 'none',
+            height: 'fit-content'
+          }}
+        >
+          <FiDownload /> Excel
+        </button>
       </div>
 
       <div className="card">

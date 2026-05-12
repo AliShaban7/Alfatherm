@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { FiPackage, FiArrowRight, FiPlus, FiEdit2, FiTrash2 } from 'react-icons/fi';
+import { FiPackage, FiArrowRight, FiPlus, FiEdit2, FiTrash2, FiDownload } from 'react-icons/fi';
 import { inventoryAPI, warehouseAPI, productAPI, vendorAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
+import * as XLSX from 'xlsx';
 
 const Inventory = () => {
   const [inventory, setInventory] = useState([]);
@@ -161,6 +162,35 @@ const Inventory = () => {
     }).format(amount) + ' AZN';
   };
 
+  const exportToExcel = () => {
+    if (!inventory.length) {
+      toast.warning('Eksport üçün məlumat yoxdur');
+      return;
+    }
+
+    const exportData = inventory.map((item, index) => ({
+      '#': index + 1,
+      'Məhsul': item.product?.name || '',
+      'SKU': item.product?.sku || '',
+      'Kateqoriya': item.product?.category || '',
+      'Anbar': item.warehouse?.name || '',
+      'Anbar Tipi': item.warehouse?.type === 'main' ? 'Əsas' : 'Filial',
+      'Miqdar': item.quantity,
+      ...(isOwner() && { 'Maya Dəyəri (vahid, AZN)': item.costPrice || 0 }),
+      ...(isOwner() && { 'Toplam Dəyər (AZN)': (item.quantity * (item.costPrice || 0)).toFixed(2) })
+    }));
+
+    try {
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Anbar');
+      XLSX.writeFile(wb, `anbar_${new Date().toISOString().split('T')[0]}.xlsx`);
+      toast.success('Excel faylı yükləndi');
+    } catch (error) {
+      toast.error('Excel faylını yaratmaq mümkün olmadı');
+    }
+  };
+
   return (
     <div>
       <div className="page-header">
@@ -169,6 +199,20 @@ const Inventory = () => {
           <p className="page-subtitle">Stok idarəetməsi</p>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button 
+            className="btn" 
+            onClick={exportToExcel}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              background: '#10b981',
+              color: 'white',
+              border: 'none'
+            }}
+          >
+            <FiDownload /> Excel
+          </button>
           {isOwner() && (
             <button className="btn btn-primary" onClick={() => setShowEntryModal(true)}>
               <FiPlus /> Mal Girişi
