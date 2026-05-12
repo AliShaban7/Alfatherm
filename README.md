@@ -49,6 +49,32 @@ Santexnik mağazası üçün tam funksional idarəetmə sistemi.
 - Hüquqi şəxslər üçün VÖEN unikal olmalıdır
 - Sistemdə dublikat VÖEN qəbul edilmir
 
+## Folder Strukturu
+
+```
+alfaterm/
+├── backend/
+│   ├── config/
+│   ├── controllers/
+│   ├── middleware/
+│   ├── models/
+│   ├── routes/
+│   ├── services/
+│   ├── validators/
+│   ├── utils/
+│   └── server.js
+├── frontend/
+│   ├── public/
+│   ├── src/
+│   │   ├── components/
+│   │   ├── context/
+│   │   ├── pages/
+│   │   ├── services/
+│   │   └── App.jsx
+│   └── index.html
+└── README.md
+```
+
 ## Lisenziya
 
 Bu layihə Alfaterm şirkəti üçün hazırlanmışdır.
