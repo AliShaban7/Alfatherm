@@ -24,6 +24,7 @@ exports.createCustomerValidation = [
       return true;
     }),
   
+  body('fin').optional().trim(),
   body('brandName').optional().trim(),
   body('address').optional().trim(),
   body('contactPerson').optional().trim(),

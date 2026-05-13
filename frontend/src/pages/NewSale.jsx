@@ -23,6 +23,7 @@ const NewSale = () => {
     name: '',
     brandName: '',
     voen: '',
+    fin: '',
     address: '',
     contactPerson: '',
     phone: ''
@@ -273,16 +274,24 @@ const NewSale = () => {
       return;
     }
     
+    // Remove empty string fields to avoid validation errors
+    const cleanedCustomerData = Object.entries(newCustomer).reduce((acc, [key, value]) => {
+      if (value !== '' && value !== null && value !== undefined) {
+        acc[key] = value;
+      }
+      return acc;
+    }, {});
+    
     setCustomerLoading(true);
     try {
-      const response = await customerAPI.create(newCustomer);
+      const response = await customerAPI.create(cleanedCustomerData);
       const createdCustomer = response.data.data;
       
       setCustomers([...customers, createdCustomer]);
       setFormData({ ...formData, customerId: createdCustomer._id });
       
       setShowCustomerModal(false);
-      setNewCustomer({ type: 'physical', name: '', brandName: '', voen: '', address: '', contactPerson: '', phone: '' });
+      setNewCustomer({ type: 'physical', name: '', brandName: '', voen: '', fin: '', address: '', contactPerson: '', phone: '' });
       toast.success('Müştəri uğurla yaradıldı');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Müştəri yaratmaq mümkün olmadı');
@@ -579,7 +588,7 @@ const NewSale = () => {
                     type="number"
                     className="form-control"
                     value={formData.paidAmount}
-                    onChange={(e) => setFormData({ ...formData, paidAmount: parseFloat(e.target.value) || 0 })}
+                    onChange={(e) => setFormData({ ...formData, paidAmount: e.target.value === '' ? '' : parseFloat(e.target.value) || 0 })}
                     step="0.01"
                     min="0"
                   />
@@ -703,6 +712,19 @@ const NewSale = () => {
                   placeholder="Şirkət/mağaza adı"
                 />
               </div>
+
+              {newCustomer.type === 'physical' && (
+                <div className="form-group">
+                  <label className="form-label">FIN (Şəxsiyyət nömrəsi)</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={newCustomer.fin}
+                    onChange={(e) => setNewCustomer({ ...newCustomer, fin: e.target.value })}
+                    placeholder="7 simvol, məsələn: 1AB2C3D"
+                  />
+                </div>
+              )}
 
               <div className="form-group">
                 <label className="form-label">VÖEN (Vergi nömrəsi)</label>

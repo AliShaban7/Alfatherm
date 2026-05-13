@@ -32,6 +32,11 @@ const customerSchema = new mongoose.Schema({
       message: 'Bu VÖEN artıq sistemdə mövcuddur'
     }
   },
+  fin: {
+    type: String,
+    trim: true,
+    sparse: true
+  },
   address: {
     type: String
   },

@@ -12,11 +12,18 @@ const Inventory = () => {
   const [vendors, setVendors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedWarehouse, setSelectedWarehouse] = useState('');
+  const [showOwnerSelectModal, setShowOwnerSelectModal] = useState(false);
   const [showEntryModal, setShowEntryModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
-  const { isOwner } = useAuth();
+  const [selectedOwnerId, setSelectedOwnerId] = useState('');
+  const { isOwner, user } = useAuth();
+  
+  const owners = [
+    { id: 'OWNER_ZAUR_ID', name: 'Zaur Müəllim' },
+    { id: 'OWNER_ADALAT_ID', name: 'Ədalət Müəllim' }
+  ];
 
   const [entryForm, setEntryForm] = useState({
     productId: '',
@@ -220,7 +227,7 @@ const Inventory = () => {
             <FiDownload /> Excel
           </button>
           {isOwner() && (
-            <button className="btn btn-primary" onClick={() => setShowEntryModal(true)}>
+            <button className="btn btn-primary" onClick={() => setShowOwnerSelectModal(true)}>
               <FiPlus /> Mal Girişi
             </button>
           )}
@@ -327,6 +334,35 @@ const Inventory = () => {
           </div>
         )}
       </div>
+
+      {showOwnerSelectModal && (
+        <div className="modal-overlay" onClick={() => setShowOwnerSelectModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+            <div className="modal-header">
+              <h3 className="modal-title">Sahibi Seçin</h3>
+              <button className="modal-close" onClick={() => setShowOwnerSelectModal(false)}>&times;</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {owners.map(owner => (
+                  <button
+                    key={owner.id}
+                    className="btn btn-primary"
+                    onClick={() => {
+                      setSelectedOwnerId(owner.id);
+                      setShowOwnerSelectModal(false);
+                      setShowEntryModal(true);
+                    }}
+                    style={{ width: '100%', padding: '1rem', fontSize: '1rem' }}
+                  >
+                    {owner.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showEntryModal && (
         <div className="modal-overlay" onClick={() => setShowEntryModal(false)}>
