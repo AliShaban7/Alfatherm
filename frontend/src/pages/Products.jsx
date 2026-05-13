@@ -35,7 +35,6 @@ const Products = () => {
     category: 'general',
     unit: 'eded',
     color: '',
-    costPrice: '',
     minPrice: '',
     recommendedPrice: '',
     description: ''
@@ -75,11 +74,19 @@ const Products = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      // Remove empty string fields to avoid validation errors
+      const cleanedData = Object.entries(formData).reduce((acc, [key, value]) => {
+        if (value !== '' && value !== null && value !== undefined) {
+          acc[key] = value;
+        }
+        return acc;
+      }, {});
+
       if (editingProduct) {
-        await productAPI.update(editingProduct._id, formData);
+        await productAPI.update(editingProduct._id, cleanedData);
         toast.success('Məhsul yeniləndi');
       } else {
-        await productAPI.create(formData);
+        await productAPI.create(cleanedData);
         toast.success('Məhsul əlavə edildi');
       }
       setShowModal(false);
@@ -101,7 +108,6 @@ const Products = () => {
       category: product.category,
       unit: product.unit,
       color: product.color || '',
-      costPrice: product.costPrice || '',
       minPrice: product.minPrice,
       recommendedPrice: product.recommendedPrice,
       description: product.description || ''
@@ -131,7 +137,6 @@ const Products = () => {
       category: 'general',
       unit: 'eded',
       color: '',
-      costPrice: '',
       minPrice: '',
       recommendedPrice: '',
       description: ''
