@@ -28,7 +28,6 @@ const Products = () => {
 
   const [formData, setFormData] = useState({
     name: '',
-    sku: '',
     brand: '',
     manufacturer: '',
     country: '',
@@ -101,7 +100,6 @@ const Products = () => {
     setEditingProduct(product);
     setFormData({
       name: product.name,
-      sku: product.sku,
       brand: product.brand || '',
       manufacturer: product.manufacturer || '',
       country: product.country || '',
@@ -130,7 +128,6 @@ const Products = () => {
     setEditingProduct(null);
     setFormData({
       name: '',
-      sku: '',
       brand: '',
       manufacturer: '',
       country: '',
@@ -219,7 +216,7 @@ const Products = () => {
             <input
               type="text"
               className="form-control"
-              placeholder="Məhsul adı və ya SKU..."
+              placeholder="Məhsul adı..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               style={{ paddingLeft: '2.5rem' }}
@@ -311,16 +308,6 @@ const Products = () => {
                       className="form-control"
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">SKU *</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={formData.sku}
-                      onChange={(e) => setFormData({ ...formData, sku: e.target.value.toUpperCase() })}
                       required
                     />
                   </div>

@@ -9,7 +9,7 @@ const productSchema = new mongoose.Schema({
   },
   sku: {
     type: String,
-    required: [true, 'SKU daxil edin'],
+    required: true,
     unique: true,
     uppercase: true
   },
@@ -107,6 +107,24 @@ productSchema.methods.toEmployeeJSON = function() {
   const obj = this.toObject();
   delete obj.costPrice;
   return obj;
+};
+
+// Auto-generate SKU
+productSchema.statics.generateSKU = async function(ownerId) {
+  const lastProduct = await this.findOne({ ownerId })
+    .sort({ createdAt: -1 })
+    .select('sku');
+  
+  if (!lastProduct || !lastProduct.sku) {
+    return `PRD-${ownerId.substring(0, 4).toUpperCase()}-0001`;
+  }
+  
+  // Extract number from last SKU (format: PRD-XXXX-NNNN)
+  const match = lastProduct.sku.match(/(\d+)$/);
+  const lastNumber = match ? parseInt(match[1]) : 0;
+  const newNumber = (lastNumber + 1).toString().padStart(4, '0');
+  
+  return `PRD-${ownerId.substring(0, 4).toUpperCase()}-${newNumber}`;
 };
 
 module.exports = mongoose.model('Product', productSchema);

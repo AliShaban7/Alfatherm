@@ -7,8 +7,8 @@ exports.createProductValidation = [
     .notEmpty().withMessage('Məhsul adı daxil edin'),
   
   body('sku')
+    .optional()
     .trim()
-    .notEmpty().withMessage('SKU daxil edin')
     .toUpperCase(),
   
   body('category')

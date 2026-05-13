@@ -3,18 +3,25 @@ const Inventory = require('../models/Inventory');
 
 class ProductService {
   async create(productData, ownerId, userId) {
-    const existingProduct = await Product.findOne({ 
-      sku: productData.sku.toUpperCase(),
-      ownerId 
-    });
-    
-    if (existingProduct) {
-      throw new Error('Bu SKU ilə məhsul artıq mövcuddur');
+    // Auto-generate SKU if not provided
+    let sku = productData.sku;
+    if (!sku) {
+      sku = await Product.generateSKU(ownerId);
+    } else {
+      sku = sku.toUpperCase();
+      const existingProduct = await Product.findOne({ sku, ownerId });
+      if (existingProduct) {
+        throw new Error('Bu SKU ilə məhsul artıq mövcuddur');
+      }
     }
+
+    // Set default costPrice if not provided
+    const costPrice = productData.costPrice || 0;
 
     const product = await Product.create({
       ...productData,
-      sku: productData.sku.toUpperCase(),
+      sku,
+      costPrice,
       ownerId,
       createdBy: userId
     });

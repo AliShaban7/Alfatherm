@@ -74,8 +74,7 @@ const NewSale = () => {
           quantity: 1,
           unitPrice: product.recommendedPrice,
           minPrice: product.minPrice,
-          recommendedPrice: product.recommendedPrice,
-          discount: 0
+          recommendedPrice: product.recommendedPrice
         }]
       });
     }
@@ -96,8 +95,6 @@ const NewSale = () => {
       newItems[index] = { ...item, unitPrice: value === '' ? '' : parseFloat(value) || 0 };
     } else if (field === 'quantity') {
       newItems[index] = { ...item, quantity: value === '' ? '' : parseInt(value) || 0 };
-    } else if (field === 'discount') {
-      newItems[index] = { ...item, discount: value === '' ? 0 : parseFloat(value) || 0 };
     } else {
       newItems[index] = { ...item, [field]: value };
     }
@@ -109,12 +106,28 @@ const NewSale = () => {
     return item.unitPrice !== '' && item.unitPrice < item.minPrice;
   };
 
+  const calculateItemDiscount = (item) => {
+    const qty = item.quantity === '' ? 0 : item.quantity;
+    const price = item.unitPrice === '' ? 0 : item.unitPrice;
+    const recommendedPrice = item.recommendedPrice || 0;
+    
+    if (price < recommendedPrice) {
+      return (recommendedPrice - price) * qty;
+    }
+    return 0;
+  };
+
+  const calculateTotalDiscount = () => {
+    return formData.items.reduce((sum, item) => {
+      return sum + calculateItemDiscount(item);
+    }, 0);
+  };
+
   const calculateTotal = () => {
     return formData.items.reduce((sum, item) => {
       const qty = item.quantity === '' ? 0 : item.quantity;
       const price = item.unitPrice === '' ? 0 : item.unitPrice;
-      const discount = item.discount || 0;
-      return sum + (qty * price) - discount;
+      return sum + (qty * price);
     }, 0);
   };
 
@@ -383,7 +396,6 @@ const NewSale = () => {
                       <th>Məhsul</th>
                       <th style={{ width: '100px' }}>Miqdar</th>
                       <th style={{ width: '150px' }}>Qiymət</th>
-                      <th style={{ width: '100px' }}>Endirim</th>
                       <th style={{ width: '120px' }}>Cəm</th>
                       <th style={{ width: '50px' }}></th>
                     </tr>
@@ -426,19 +438,8 @@ const NewSale = () => {
                             </div>
                           )}
                         </td>
-                        <td>
-                          <input
-                            type="number"
-                            className="form-control"
-                            value={item.discount || 0}
-                            onChange={(e) => handleItemChange(index, 'discount', e.target.value)}
-                            step="0.01"
-                            min="0"
-                            style={{ width: '90px' }}
-                          />
-                        </td>
                         <td style={{ fontWeight: 600 }}>
-                          {formatCurrency((item.quantity || 0) * (item.unitPrice || 0) - (item.discount || 0))}
+                          {formatCurrency((item.quantity || 0) * (item.unitPrice || 0))}
                         </td>
                         <td>
                           <button
@@ -597,6 +598,14 @@ const NewSale = () => {
             </div>
 
             <div className="card">
+              {calculateTotalDiscount() > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', color: 'var(--success)' }}>
+                  <span>Endirim:</span>
+                  <span style={{ fontWeight: 600 }}>
+                    -{formatCurrency(calculateTotalDiscount())}
+                  </span>
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
                 <span style={{ color: 'var(--gray-600)' }}>Toplam:</span>
                 <span style={{ fontSize: '1.5rem', fontWeight: 700 }}>
