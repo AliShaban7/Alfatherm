@@ -97,21 +97,21 @@ const seedDatabase = async () => {
         branchId: branches[0]._id
       },
       {
-        name: 'Satıcı 1 (Zaur)',
+        name: 'Satıcı 1',
         email: 'satici1@alfaterm.az',
         phone: '+994503333333',
         password: '123456',
         role: ROLES.EMPLOYEE,
-        ownerId: 'owner_zaur_001',
+        ownerId: 'owner_zaur_001',  // General salesperson - can see all data
         branchId: branches[1]._id
       },
       {
-        name: 'Satıcı 2 (Ədalət)',
+        name: 'Satıcı 2',
         email: 'satici2@alfaterm.az',
         phone: '+994504444444',
         password: '123456',
         role: ROLES.EMPLOYEE,
-        ownerId: 'owner_adalat_002',
+        ownerId: 'owner_zaur_001',  // General salesperson - can see all data
         branchId: branches[2]._id
       }
     ]);

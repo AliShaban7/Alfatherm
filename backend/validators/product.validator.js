@@ -13,7 +13,7 @@ exports.createProductValidation = [
   
   body('category')
     .notEmpty().withMessage('Kateqoriya seçin')
-    .isIn(Object.values(PRODUCT_CATEGORIES)).withMessage('Düzgün kateqoriya seçin'),
+    .trim(),
   
   body('unit')
     .optional()
@@ -52,7 +52,7 @@ exports.updateProductValidation = [
   
   body('category')
     .optional()
-    .isIn(Object.values(PRODUCT_CATEGORIES)).withMessage('Düzgün kateqoriya seçin'),
+    .trim(),
   
   body('unit')
     .optional()

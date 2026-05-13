@@ -33,7 +33,7 @@ const NewSale = () => {
     paymentType: 'prepaid',
     paymentMethod: 'cash',
     isOfficial: false,
-    paidAmount: 0,
+    paidAmount: '',
     note: '',
     items: []
   });

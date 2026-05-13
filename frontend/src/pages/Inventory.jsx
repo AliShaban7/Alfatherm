@@ -162,6 +162,12 @@ const Inventory = () => {
     }).format(amount) + ' AZN';
   };
 
+  const getTotalValue = () => {
+    return inventory.reduce((total, item) => {
+      return total + (item.quantity * (item.costPrice || 0));
+    }, 0);
+  };
+
   const exportToExcel = () => {
     if (!inventory.length) {
       toast.warning('Eksport üçün məlumat yoxdur');
@@ -258,7 +264,7 @@ const Inventory = () => {
                   <th>Kateqoriya</th>
                   {!selectedWarehouse && <th>Anbar</th>}
                   <th>Miqdar</th>
-                  {isOwner() && <th>Dəyər</th>}
+                  {isOwner() && <th>Dəyər <span style={{ color: '#dc2626', fontWeight: 'bold' }}>({formatCurrency(getTotalValue())})</span></th>}
                   {isOwner() && <th style={{ width: '100px' }}></th>}
                 </tr>
               </thead>
