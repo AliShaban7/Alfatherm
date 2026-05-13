@@ -103,9 +103,9 @@ const Sales = () => {
             <div class="item">
               <div>
                 <div>${item.productName || item.productId?.name || '-'}</div>
-                <div class="item-detail">${item.quantity} x ${item.unitPrice.toFixed(2)} AZN</div>
+                <div class="item-detail">${item.quantity} x ${item.unitPrice.toFixed(2)} AZN${item.discount > 0 ? ` (-${item.discount.toFixed(2)} AZN)` : ''}</div>
               </div>
-              <div>${(item.quantity * item.unitPrice).toFixed(2)} AZN</div>
+              <div>${((item.quantity * item.unitPrice) - (item.discount || 0)).toFixed(2)} AZN</div>
             </div>
           `).join('')}
         </div>

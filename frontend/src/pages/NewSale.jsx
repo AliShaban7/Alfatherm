@@ -4,6 +4,7 @@ import { FiPlus, FiTrash2, FiSearch, FiX } from 'react-icons/fi';
 import { saleAPI, productAPI, customerAPI, warehouseAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
+import { format } from 'date-fns';
 
 const NewSale = () => {
   const navigate = useNavigate();
@@ -73,7 +74,8 @@ const NewSale = () => {
           quantity: 1,
           unitPrice: product.recommendedPrice,
           minPrice: product.minPrice,
-          recommendedPrice: product.recommendedPrice
+          recommendedPrice: product.recommendedPrice,
+          discount: 0
         }]
       });
     }
@@ -94,6 +96,8 @@ const NewSale = () => {
       newItems[index] = { ...item, unitPrice: value === '' ? '' : parseFloat(value) || 0 };
     } else if (field === 'quantity') {
       newItems[index] = { ...item, quantity: value === '' ? '' : parseInt(value) || 0 };
+    } else if (field === 'discount') {
+      newItems[index] = { ...item, discount: value === '' ? 0 : parseFloat(value) || 0 };
     } else {
       newItems[index] = { ...item, [field]: value };
     }
@@ -109,8 +113,92 @@ const NewSale = () => {
     return formData.items.reduce((sum, item) => {
       const qty = item.quantity === '' ? 0 : item.quantity;
       const price = item.unitPrice === '' ? 0 : item.unitPrice;
-      return sum + (qty * price);
+      const discount = item.discount || 0;
+      return sum + (qty * price) - discount;
     }, 0);
+  };
+
+  const getPaymentMethodBadge = (method) => {
+    const methods = {
+      cash: 'Nağd',
+      pos: 'POS',
+      bank: 'Bank',
+      credit: 'Nisyə'
+    };
+    return methods[method] || '-';
+  };
+
+  const printReceipt = (sale) => {
+    const printWindow = window.open('', '', 'width=300,height=600');
+    const customer = customers.find(c => c._id === sale.customerId);
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Qəbz #${sale.saleNumber}</title>
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { font-family: 'Courier New', monospace; width: 80mm; padding: 10px; font-size: 12px; }
+          .header { text-align: center; margin-bottom: 10px; border-bottom: 1px dashed #000; padding-bottom: 10px; }
+          .header h2 { margin: 5px 0; font-size: 16px; }
+          .info { margin-bottom: 10px; font-size: 11px; }
+          .items { margin: 10px 0; }
+          .item { display: flex; justify-content: space-between; margin: 5px 0; }
+          .item-detail { font-size: 10px; color: #666; }
+          .total { border-top: 1px dashed #000; margin-top: 10px; padding-top: 10px; font-weight: bold; }
+          .footer { text-align: center; margin-top: 15px; border-top: 1px dashed #000; padding-top: 10px; font-size: 10px; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h2>ALFATERM</h2>
+          <div>Qəbz #${sale.saleNumber}</div>
+        </div>
+        <div class="info">
+          <div>Tarix: ${format(new Date(sale.date), 'dd.MM.yyyy HH:mm')}</div>
+          <div>Müştəri: ${customer?.name || '-'}</div>
+          <div>Ödəniş: ${sale.paymentType === 'prepaid' ? 'Nağd' : 'Nisyə'} (${getPaymentMethodBadge(sale.paymentMethod)})</div>
+        </div>
+        <div class="items">
+          ${sale.items.map(item => `
+            <div class="item">
+              <div>
+                <div>${item.productName}</div>
+                <div class="item-detail">${item.quantity} x ${item.unitPrice.toFixed(2)} AZN${item.discount > 0 ? ` (-${item.discount.toFixed(2)} AZN)` : ''}</div>
+              </div>
+              <div>${((item.quantity * item.unitPrice) - (item.discount || 0)).toFixed(2)} AZN</div>
+            </div>
+          `).join('')}
+        </div>
+        <div class="total">
+          <div style="display: flex; justify-content: space-between;">
+            <span>TOPLAM:</span>
+            <span>${sale.totalAmount.toFixed(2)} AZN</span>
+          </div>
+          ${sale.paymentType === 'credit' ? `
+            <div style="display: flex; justify-content: space-between; font-size: 11px;">
+              <span>Ödənilib:</span>
+              <span>${(sale.paidAmount || 0).toFixed(2)} AZN</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 11px;">
+              <span>Qalıq:</span>
+              <span>${(sale.totalAmount - (sale.paidAmount || 0)).toFixed(2)} AZN</span>
+            </div>
+          ` : ''}
+        </div>
+        <div class="footer">
+          Təşəkkür edirik!
+        </div>
+      </body>
+      </html>
+    `;
+    printWindow.document.write(printContent);
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 250);
   };
 
   const handleSubmit = async (e) => {
@@ -144,8 +232,14 @@ const NewSale = () => {
 
     setLoading(true);
     try {
-      await saleAPI.create(formData);
+      const response = await saleAPI.create(formData);
       toast.success('Satış uğurla yaradıldı');
+      
+      // Auto-print receipt
+      if (response.data && response.data.data) {
+        printReceipt(response.data.data);
+      }
+      
       navigate('/sales');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Satış yaratmaq mümkün olmadı');
@@ -289,6 +383,7 @@ const NewSale = () => {
                       <th>Məhsul</th>
                       <th style={{ width: '100px' }}>Miqdar</th>
                       <th style={{ width: '150px' }}>Qiymət</th>
+                      <th style={{ width: '100px' }}>Endirim</th>
                       <th style={{ width: '120px' }}>Cəm</th>
                       <th style={{ width: '50px' }}></th>
                     </tr>
@@ -331,8 +426,19 @@ const NewSale = () => {
                             </div>
                           )}
                         </td>
+                        <td>
+                          <input
+                            type="number"
+                            className="form-control"
+                            value={item.discount || 0}
+                            onChange={(e) => handleItemChange(index, 'discount', e.target.value)}
+                            step="0.01"
+                            min="0"
+                            style={{ width: '90px' }}
+                          />
+                        </td>
                         <td style={{ fontWeight: 600 }}>
-                          {formatCurrency((item.quantity || 0) * (item.unitPrice || 0))}
+                          {formatCurrency((item.quantity || 0) * (item.unitPrice || 0) - (item.discount || 0))}
                         </td>
                         <td>
                           <button

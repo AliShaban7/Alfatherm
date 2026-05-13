@@ -39,9 +39,10 @@ class SaleService {
         throw new Error(`"${product.name}" üçün qiymət minimum qiymətdən (${product.minPrice} AZN) aşağı ola bilməz`);
       }
 
-      const itemTotal = item.unitPrice * item.quantity;
+      const itemDiscount = item.discount || 0;
+      const itemSubtotal = item.unitPrice * item.quantity;
+      const itemTotal = itemSubtotal - itemDiscount;
       const itemCost = product.costPrice * item.quantity;
-      const itemDiscount = (product.recommendedPrice - item.unitPrice) * item.quantity;
 
       processedItems.push({
         productId: product._id,
@@ -50,16 +51,16 @@ class SaleService {
         unitPrice: item.unitPrice,
         minPrice: product.minPrice,
         costPrice: product.costPrice,
-        discount: itemDiscount > 0 ? itemDiscount : 0,
+        discount: itemDiscount,
         total: itemTotal
       });
 
-      subtotal += itemTotal;
+      subtotal += itemSubtotal;
       totalCost += itemCost;
-      totalDiscount += itemDiscount > 0 ? itemDiscount : 0;
+      totalDiscount += itemDiscount;
     }
 
-    const totalAmount = subtotal;
+    const totalAmount = subtotal - totalDiscount;
     const profit = totalAmount - totalCost;
 
     const session = await mongoose.startSession();
