@@ -2,7 +2,12 @@ const productService = require('../services/product.service');
 
 exports.create = async (req, res, next) => {
   try {
-    const product = await productService.create(req.body, req.ownerId, req.user._id);
+    // Super owner can specify ownerId in body, otherwise use req.ownerId
+    const ownerId = req.user.role === 'SUPER_OWNER' && req.body.ownerId 
+      ? req.body.ownerId 
+      : req.ownerId;
+    
+    const product = await productService.create(req.body, ownerId, req.user._id);
     
     res.status(201).json({
       success: true,

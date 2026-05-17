@@ -2,9 +2,14 @@ const inventoryService = require('../services/inventory.service');
 
 exports.productEntry = async (req, res, next) => {
   try {
+    // Super owner can specify ownerId in body, otherwise use req.ownerId
+    const ownerId = req.user.role === 'SUPER_OWNER' && req.body.ownerId 
+      ? req.body.ownerId 
+      : req.ownerId;
+    
     const result = await inventoryService.productEntry(
       req.body,
-      req.ownerId,
+      ownerId,
       req.user._id,
       req.canAccessMainWarehouse
     );

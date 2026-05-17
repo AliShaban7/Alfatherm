@@ -24,7 +24,12 @@ const Products = () => {
   const [category, setCategory] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
-  const { isOwner } = useAuth();
+  const { isOwner, isSuperOwner, user } = useAuth();
+  
+  const owners = [
+    { id: 'OWNER_ZAUR_ID', name: 'Zaur' },
+    { id: 'OWNER_ADALAT_ID', name: 'Ədalət' }
+  ];
 
   const [formData, setFormData] = useState({
     name: '',
@@ -36,7 +41,8 @@ const Products = () => {
     color: '',
     minPrice: '',
     recommendedPrice: '',
-    description: ''
+    description: '',
+    ownerId: user?.ownerId || ''
   });
 
   useEffect(() => {
@@ -136,7 +142,8 @@ const Products = () => {
       color: '',
       minPrice: '',
       recommendedPrice: '',
-      description: ''
+      description: '',
+      ownerId: user?.ownerId || ''
     });
   };
 
@@ -312,6 +319,24 @@ const Products = () => {
                     />
                   </div>
                 </div>
+                {isSuperOwner() && !editingProduct && (
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label className="form-label">Sahibi *</label>
+                      <select
+                        className="form-control"
+                        value={formData.ownerId}
+                        onChange={(e) => setFormData({ ...formData, ownerId: e.target.value })}
+                        required
+                      >
+                        <option value="">Seçin...</option>
+                        {owners.map(owner => (
+                          <option key={owner.id} value={owner.id}>{owner.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
                 <div className="form-row">
                   <div className="form-group">
                     <label className="form-label">Kateqoriya *</label>

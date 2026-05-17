@@ -18,7 +18,7 @@ const Inventory = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [selectedOwnerId, setSelectedOwnerId] = useState('');
-  const { isOwner, user } = useAuth();
+  const { isOwner, isSuperOwner, user } = useAuth();
   
   const owners = [
     { id: 'OWNER_ZAUR_ID', name: 'Zaur Müəllim' },
@@ -33,7 +33,8 @@ const Inventory = () => {
     vendorId: '',
     paymentStatus: 'paid',
     paidAmount: 0,
-    dueDate: ''
+    dueDate: '',
+    ownerId: ''
   });
 
   const [transferForm, setTransferForm] = useState({
@@ -50,7 +51,7 @@ const Inventory = () => {
 
   useEffect(() => {
     fetchData();
-  }, [selectedWarehouse]);
+  }, [selectedWarehouse, selectedOwnerId]);
 
   const fetchData = async () => {
     try {
@@ -70,7 +71,14 @@ const Inventory = () => {
         setInventory(inventoryRes.data.data || []);
       }
       setWarehouses(warehousesRes.data.data);
-      setProducts(productsRes.data.products);
+      
+      // Filter products based on selected owner (for super owner in entry modal)
+      let filteredProducts = productsRes.data.products;
+      if (selectedOwnerId && isSuperOwner()) {
+        filteredProducts = filteredProducts.filter(p => p.ownerId === selectedOwnerId);
+      }
+      
+      setProducts(filteredProducts);
       setVendors(vendorsRes.data.vendors || []);
     } catch (error) {
       toast.error('Məlumatları yükləmək mümkün olmadı');
@@ -82,8 +90,11 @@ const Inventory = () => {
   const handleProductEntry = async (e) => {
     e.preventDefault();
     try {
-      // Filter out empty values
+      // Filter out empty values and add ownerId for super owner
       const formData = { ...entryForm };
+      if (isSuperOwner() && selectedOwnerId) {
+        formData.ownerId = selectedOwnerId;
+      }
       if (!formData.dueDate) {
         delete formData.dueDate;
       }
@@ -94,6 +105,7 @@ const Inventory = () => {
       await inventoryAPI.productEntry(formData);
       toast.success('Mal girişi uğurla tamamlandı');
       setShowEntryModal(false);
+      setSelectedOwnerId('');
       setEntryForm({ 
         productId: '', 
         warehouseId: '', 
@@ -102,6 +114,7 @@ const Inventory = () => {
         vendorId: '',
         paymentStatus: 'paid',
         paidAmount: 0,
+        ownerId: '',
         dueDate: ''
       });
       fetchData();
@@ -227,7 +240,17 @@ const Inventory = () => {
             <FiDownload /> Excel
           </button>
           {isOwner() && (
-            <button className="btn btn-primary" onClick={() => setShowOwnerSelectModal(true)}>
+            <button 
+              className="btn btn-primary" 
+              onClick={() => {
+                if (isSuperOwner()) {
+                  setShowOwnerSelectModal(true);
+                } else {
+                  setSelectedOwnerId(user.ownerId);
+                  setShowEntryModal(true);
+                }
+              }}
+            >
               <FiPlus /> Mal Girişi
             </button>
           )}
