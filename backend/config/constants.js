@@ -6,8 +6,11 @@ module.exports = {
     EMPLOYEE: 'EMPLOYEE'
   },
 
-  // Pre-defined Super Owners (Zaur & Adalat)
-  SUPER_OWNERS: ['owner_zaur_001', 'owner_adalat_002'],
+  // Pre-defined business owners (Zaur & Ədalət)
+  OWNER_IDS: {
+    ZAUR: 'owner_zaur_001',
+    ADALAT: 'owner_adalat_002'
+  },
 
   // Customer Types
   CUSTOMER_TYPES: {

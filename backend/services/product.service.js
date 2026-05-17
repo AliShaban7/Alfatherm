@@ -1,5 +1,6 @@
 const Product = require('../models/Product');
 const Inventory = require('../models/Inventory');
+const { ROLES } = require('../config/constants');
 
 class ProductService {
   async create(productData, ownerId, userId) {
@@ -32,7 +33,7 @@ class ProductService {
   async getAll(ownerId, filters = {}, canSeeCostPrice = false, user = null) {
     const query = { isActive: true };
     
-    if (user?.role !== 'salesperson') {
+    if (user?.role !== ROLES.EMPLOYEE && user?.role !== ROLES.SUPER_OWNER) {
       query.ownerId = ownerId;
     }
 

@@ -21,8 +21,8 @@ const Inventory = () => {
   const { isOwner, isSuperOwner, user } = useAuth();
   
   const owners = [
-    { id: 'OWNER_ZAUR_ID', name: 'Zaur Müəllim' },
-    { id: 'OWNER_ADALAT_ID', name: 'Ədalət Müəllim' }
+    { id: 'owner_zaur_001', name: 'Zaur' },
+    { id: 'owner_adalat_002', name: 'Ədalət' }
   ];
 
   const [entryForm, setEntryForm] = useState({

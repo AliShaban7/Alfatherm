@@ -79,20 +79,29 @@ const seedDatabase = async () => {
     console.log('Creating users...');
     const users = await User.create([
       {
-        name: 'Zaur (Təsisçi)',
+        name: 'Anar (Təsisçi)',
+        email: 'anar@alfaterm.az',
+        phone: '+994500000000',
+        password: '123456',
+        role: ROLES.SUPER_OWNER,
+        ownerId: 'owner_super_anar',
+        branchId: branches[0]._id
+      },
+      {
+        name: 'Zaur',
         email: 'zaur@alfaterm.az',
         phone: '+994501111111',
         password: '123456',
-        role: ROLES.SUPER_OWNER,
+        role: ROLES.OWNER,
         ownerId: 'owner_zaur_001',
         branchId: branches[0]._id
       },
       {
-        name: 'Ədalət (Təsisçi)',
+        name: 'Ədalət',
         email: 'adalat@alfaterm.az',
         phone: '+994502222222',
         password: '123456',
-        role: ROLES.SUPER_OWNER,
+        role: ROLES.OWNER,
         ownerId: 'owner_adalat_002',
         branchId: branches[0]._id
       },
@@ -102,7 +111,7 @@ const seedDatabase = async () => {
         phone: '+994503333333',
         password: '123456',
         role: ROLES.EMPLOYEE,
-        ownerId: 'owner_zaur_001',  // General salesperson - can see all data
+        ownerId: 'owner_zaur_001',
         branchId: branches[1]._id
       },
       {
@@ -111,7 +120,7 @@ const seedDatabase = async () => {
         phone: '+994504444444',
         password: '123456',
         role: ROLES.EMPLOYEE,
-        ownerId: 'owner_zaur_001',  // General salesperson - can see all data
+        ownerId: 'owner_zaur_001',
         branchId: branches[2]._id
       }
     ]);
@@ -131,7 +140,7 @@ const seedDatabase = async () => {
         minPrice: 420,
         recommendedPrice: 480,
         ownerId: 'owner_zaur_001',
-        createdBy: users[0]._id
+        createdBy: users[1]._id
       },
       {
         name: 'Radiator Panel 600x1000',
@@ -145,7 +154,7 @@ const seedDatabase = async () => {
         minPrice: 110,
         recommendedPrice: 130,
         ownerId: 'owner_zaur_001',
-        createdBy: users[0]._id
+        createdBy: users[1]._id
       },
       {
         name: 'Kombi BAXI 24kW',
@@ -159,7 +168,7 @@ const seedDatabase = async () => {
         minPrice: 1450,
         recommendedPrice: 1600,
         ownerId: 'owner_zaur_001',
-        createdBy: users[0]._id
+        createdBy: users[1]._id
       }
     ]);
     console.log('Zaur products created:', zaurProducts.length);
@@ -178,7 +187,7 @@ const seedDatabase = async () => {
         minPrice: 1.8,
         recommendedPrice: 2.2,
         ownerId: 'owner_adalat_002',
-        createdBy: users[1]._id
+        createdBy: users[2]._id
       },
       {
         name: 'Rozetka 2-li Schneider',
@@ -192,7 +201,7 @@ const seedDatabase = async () => {
         minPrice: 12,
         recommendedPrice: 15,
         ownerId: 'owner_adalat_002',
-        createdBy: users[1]._id
+        createdBy: users[2]._id
       },
       {
         name: 'Duş Sistemi Grohe',
@@ -206,7 +215,7 @@ const seedDatabase = async () => {
         minPrice: 580,
         recommendedPrice: 650,
         ownerId: 'owner_adalat_002',
-        createdBy: users[1]._id
+        createdBy: users[2]._id
       }
     ]);
     console.log('Adalat products created:', adalatProducts.length);
@@ -219,7 +228,7 @@ const seedDatabase = async () => {
         phone: '+994505551111',
         address: 'Bakı, Nəsimi',
         ownerId: 'owner_zaur_001',
-        createdBy: users[0]._id
+        createdBy: users[1]._id
       },
       {
         type: CUSTOMER_TYPES.LEGAL,
@@ -230,7 +239,7 @@ const seedDatabase = async () => {
         contactPerson: 'Rəşad Əliyev',
         address: 'Bakı, Xətai',
         ownerId: 'owner_zaur_001',
-        createdBy: users[0]._id
+        createdBy: users[1]._id
       },
       {
         type: CUSTOMER_TYPES.MASTER,
@@ -238,7 +247,7 @@ const seedDatabase = async () => {
         phone: '+994556661111',
         address: 'Bakı, Yasamal',
         ownerId: 'owner_zaur_001',
-        createdBy: users[0]._id
+        createdBy: users[1]._id
       },
       {
         type: CUSTOMER_TYPES.PHYSICAL,
@@ -246,7 +255,7 @@ const seedDatabase = async () => {
         phone: '+994507771111',
         address: 'Bakı, Binəqədi',
         ownerId: 'owner_adalat_002',
-        createdBy: users[1]._id
+        createdBy: users[2]._id
       },
       {
         type: CUSTOMER_TYPES.LEGAL,
@@ -257,7 +266,7 @@ const seedDatabase = async () => {
         contactPerson: 'Kamran Quliyev',
         address: 'Bakı, Sabunçu',
         ownerId: 'owner_adalat_002',
-        createdBy: users[1]._id
+        createdBy: users[2]._id
       }
     ]);
     console.log('Customers created:', customers.length);
@@ -267,22 +276,22 @@ const seedDatabase = async () => {
     console.log('========================================');
     console.log('\nTest Users:');
     console.log('----------------------------------------');
-    console.log('Super Owner (Zaur):');
+    console.log('Super Owner (Anar):');
+    console.log('  Email: anar@alfaterm.az');
+    console.log('  Password: 123456');
+    console.log('----------------------------------------');
+    console.log('Owner (Zaur):');
     console.log('  Email: zaur@alfaterm.az');
     console.log('  Password: 123456');
     console.log('  Owner ID: owner_zaur_001');
     console.log('----------------------------------------');
-    console.log('Super Owner (Adalat):');
+    console.log('Owner (Ədalət):');
     console.log('  Email: adalat@alfaterm.az');
     console.log('  Password: 123456');
     console.log('  Owner ID: owner_adalat_002');
     console.log('----------------------------------------');
-    console.log('Employee (Zaur\'s):');
-    console.log('  Email: satici1@alfaterm.az');
-    console.log('  Password: 123456');
-    console.log('----------------------------------------');
-    console.log('Employee (Adalat\'s):');
-    console.log('  Email: satici2@alfaterm.az');
+    console.log('Employee:');
+    console.log('  Email: satici1@alfaterm.az / satici2@alfaterm.az');
     console.log('  Password: 123456');
     console.log('========================================\n');
 

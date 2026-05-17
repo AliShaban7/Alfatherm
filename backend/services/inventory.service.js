@@ -5,7 +5,7 @@ const Product = require('../models/Product');
 const Warehouse = require('../models/Warehouse');
 const Vendor = require('../models/Vendor');
 const Creditor = require('../models/Creditor');
-const { INVENTORY_TRANSACTION_TYPES, WAREHOUSE_TYPES } = require('../config/constants');
+const { INVENTORY_TRANSACTION_TYPES, WAREHOUSE_TYPES, ROLES } = require('../config/constants');
 
 class InventoryService {
   async productEntry(data, ownerId, userId, canAccessMainWarehouse) {
@@ -246,7 +246,7 @@ class InventoryService {
     }
 
     const query = { warehouseId, quantity: { $gt: 0 } };
-    if (user?.role !== 'salesperson') {
+    if (user?.role !== ROLES.EMPLOYEE && user?.role !== ROLES.SUPER_OWNER) {
       query.ownerId = ownerId;
     }
 
@@ -273,7 +273,7 @@ class InventoryService {
     }
 
     const query = { quantity: { $gt: 0 } };
-    if (user?.role !== 'salesperson') {
+    if (user?.role !== ROLES.EMPLOYEE && user?.role !== ROLES.SUPER_OWNER) {
       query.ownerId = ownerId;
     }
 

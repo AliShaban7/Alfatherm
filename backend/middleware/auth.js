@@ -81,9 +81,9 @@ exports.superOwnerOnly = (req, res, next) => {
 };
 
 exports.ownerDataIsolation = (req, res, next) => {
-  // Employees (salespeople) can see data from all owners
-  if (req.user.role === ROLES.EMPLOYEE) {
-    req.ownerFilter = {};  // No owner filter for employees
+  // Employees and super owner can see data from all owners
+  if (req.user.role === ROLES.EMPLOYEE || req.user.role === ROLES.SUPER_OWNER) {
+    req.ownerFilter = {};
   } else {
     req.ownerFilter = { ownerId: req.ownerId };
   }
