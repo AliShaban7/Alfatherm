@@ -55,9 +55,9 @@ const Header = () => {
   const getRoleBadge = (role) => {
     switch (role) {
       case 'SUPER_OWNER':
-        return <span className="role-badge super-owner">Təsisçi</span>;
+        return <span className="role-badge super-owner">Admin</span>;
       case 'OWNER':
-        return <span className="role-badge owner">Sahib</span>;
+        return <span className="role-badge owner">Təsisçi</span>;
       default:
         return <span className="role-badge employee">İşçi</span>;
     }

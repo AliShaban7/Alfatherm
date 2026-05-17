@@ -79,16 +79,16 @@ const seedDatabase = async () => {
     console.log('Creating users...');
     const users = await User.create([
       {
-        name: 'Anar (Təsisçi)',
+        name: 'Anar (Admin)',
         email: 'anar@alfaterm.az',
         phone: '+994500000000',
         password: '123456',
         role: ROLES.SUPER_OWNER,
-        ownerId: 'owner_super_anar',
+        ownerId: 'owner_admin_000',
         branchId: branches[0]._id
       },
       {
-        name: 'Zaur',
+        name: 'Zaur Müəllim',
         email: 'zaur@alfaterm.az',
         phone: '+994501111111',
         password: '123456',
@@ -97,7 +97,7 @@ const seedDatabase = async () => {
         branchId: branches[0]._id
       },
       {
-        name: 'Ədalət',
+        name: 'Ədalət Müəllim',
         email: 'adalat@alfaterm.az',
         phone: '+994502222222',
         password: '123456',
@@ -111,7 +111,7 @@ const seedDatabase = async () => {
         phone: '+994503333333',
         password: '123456',
         role: ROLES.EMPLOYEE,
-        ownerId: 'owner_zaur_001',
+        ownerId: 'owner_zaur_001',  // General salesperson - can see all data
         branchId: branches[1]._id
       },
       {
@@ -120,7 +120,7 @@ const seedDatabase = async () => {
         phone: '+994504444444',
         password: '123456',
         role: ROLES.EMPLOYEE,
-        ownerId: 'owner_zaur_001',
+        ownerId: 'owner_zaur_001',  // General salesperson - can see all data
         branchId: branches[2]._id
       }
     ]);
@@ -276,7 +276,7 @@ const seedDatabase = async () => {
     console.log('========================================');
     console.log('\nTest Users:');
     console.log('----------------------------------------');
-    console.log('Super Owner (Anar):');
+    console.log('Admin (full access):');
     console.log('  Email: anar@alfaterm.az');
     console.log('  Password: 123456');
     console.log('----------------------------------------');
@@ -290,8 +290,12 @@ const seedDatabase = async () => {
     console.log('  Password: 123456');
     console.log('  Owner ID: owner_adalat_002');
     console.log('----------------------------------------');
-    console.log('Employee:');
-    console.log('  Email: satici1@alfaterm.az / satici2@alfaterm.az');
+    console.log('Employee (Zaur\'s):');
+    console.log('  Email: satici1@alfaterm.az');
+    console.log('  Password: 123456');
+    console.log('----------------------------------------');
+    console.log('Employee (Adalat\'s):');
+    console.log('  Email: satici2@alfaterm.az');
     console.log('  Password: 123456');
     console.log('========================================\n');
 

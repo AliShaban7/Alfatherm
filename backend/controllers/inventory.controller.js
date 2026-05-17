@@ -1,10 +1,11 @@
 const inventoryService = require('../services/inventory.service');
+const { ROLES } = require('../config/constants');
 
 exports.productEntry = async (req, res, next) => {
   try {
     // Super owner can specify ownerId in body, otherwise use req.ownerId
-    const ownerId = req.user.role === 'SUPER_OWNER' && req.body.ownerId 
-      ? req.body.ownerId 
+    const ownerId = req.user.role === ROLES.SUPER_OWNER && req.body.ownerId
+      ? req.body.ownerId
       : req.ownerId;
     
     const result = await inventoryService.productEntry(

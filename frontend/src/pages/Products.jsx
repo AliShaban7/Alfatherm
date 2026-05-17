@@ -3,6 +3,7 @@ import { FiPlus, FiSearch, FiEdit2, FiTrash2, FiDownload } from 'react-icons/fi'
 import { productAPI, categoryAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
+import { BUSINESS_OWNERS } from '../config/owners';
 import * as XLSX from 'xlsx';
 
 const UNITS = [
@@ -25,11 +26,6 @@ const Products = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const { isOwner, isSuperOwner, user } = useAuth();
-  
-  const owners = [
-    { id: 'owner_zaur_001', name: 'Zaur' },
-    { id: 'owner_adalat_002', name: 'Ədalət' }
-  ];
 
   const [formData, setFormData] = useState({
     name: '',
@@ -330,7 +326,7 @@ const Products = () => {
                         required
                       >
                         <option value="">Seçin...</option>
-                        {owners.map(owner => (
+                        {BUSINESS_OWNERS.map(owner => (
                           <option key={owner.id} value={owner.id}>{owner.name}</option>
                         ))}
                       </select>

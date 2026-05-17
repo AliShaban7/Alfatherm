@@ -3,6 +3,7 @@ import { FiPackage, FiArrowRight, FiPlus, FiEdit2, FiTrash2, FiDownload } from '
 import { inventoryAPI, warehouseAPI, productAPI, vendorAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
+import { BUSINESS_OWNERS } from '../config/owners';
 import * as XLSX from 'xlsx';
 
 const Inventory = () => {
@@ -19,11 +20,6 @@ const Inventory = () => {
   const [editingItem, setEditingItem] = useState(null);
   const [selectedOwnerId, setSelectedOwnerId] = useState('');
   const { isOwner, isSuperOwner, user } = useAuth();
-  
-  const owners = [
-    { id: 'owner_zaur_001', name: 'Zaur' },
-    { id: 'owner_adalat_002', name: 'Ədalət' }
-  ];
 
   const [entryForm, setEntryForm] = useState({
     productId: '',
@@ -367,7 +363,7 @@ const Inventory = () => {
             </div>
             <div className="modal-body">
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                {owners.map(owner => (
+                {BUSINESS_OWNERS.map(owner => (
                   <button
                     key={owner.id}
                     className="btn btn-primary"

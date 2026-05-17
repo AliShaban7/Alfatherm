@@ -1,4 +1,5 @@
 const Customer = require('../models/Customer');
+const { ROLES } = require('../config/constants');
 
 class CustomerService {
   async create(customerData, ownerId, userId) {
@@ -21,7 +22,7 @@ class CustomerService {
   async getAll(ownerId, filters = {}, user = null) {
     const query = { isActive: true };
     
-    if (user?.role !== 'salesperson') {
+    if (user?.role !== ROLES.EMPLOYEE && user?.role !== ROLES.SUPER_OWNER) {
       query.ownerId = ownerId;
     }
 

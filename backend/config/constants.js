@@ -6,10 +6,11 @@ module.exports = {
     EMPLOYEE: 'EMPLOYEE'
   },
 
-  // Pre-defined business owners (Zaur & Ədalət)
+  // Business owner IDs (Zaur & Ədalət — each owns their own data)
   OWNER_IDS: {
     ZAUR: 'owner_zaur_001',
-    ADALAT: 'owner_adalat_002'
+    ADALAT: 'owner_adalat_002',
+    ADMIN: 'owner_admin_000'
   },
 
   // Customer Types
