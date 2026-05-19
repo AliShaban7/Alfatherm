@@ -10,6 +10,8 @@ router.use(employeeRestricted); // Block all employees from accessing any report
 
 router.get('/dashboard', reportController.getDashboard);
 
+router.get('/period-stats', reportController.getPeriodStats);
+
 router.get('/sales', reportController.getSalesReport);
 
 router.get('/products', reportController.getProductSalesReport);

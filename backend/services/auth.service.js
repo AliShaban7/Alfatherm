@@ -24,7 +24,8 @@ class AuthService {
   }
 
   async login(email, password) {
-    const user = await User.findOne({ email }).select('+password');
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const user = await User.findOne({ email: normalizedEmail }).select('+password');
 
     if (!user) {
       throw new Error('Email və ya şifrə yanlışdır');
@@ -39,10 +40,10 @@ class AuthService {
       throw new Error('Email və ya şifrə yanlışdır');
     }
 
-    user.lastLogin = new Date();
-    await user.save();
-
     const token = user.getSignedJwtToken();
+
+    // Update lastLogin in background (don't block login response)
+    User.updateOne({ _id: user._id }, { lastLogin: new Date() }).catch(() => {});
 
     return {
       user: {

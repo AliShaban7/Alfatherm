@@ -10,7 +10,7 @@ import {
   FiPlus,
   FiCalendar
 } from 'react-icons/fi';
-import { reportAPI, saleAPI } from '../services/api';
+import { reportAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
 import './Dashboard.css';
@@ -56,19 +56,11 @@ const Dashboard = () => {
   const fetchPeriodStats = async () => {
     setPeriodLoading(true);
     try {
-      const response = await saleAPI.getAll({
+      const response = await reportAPI.getPeriodStats({
         startDate: dateFilter.startDate,
-        endDate: dateFilter.endDate,
-        limit: 10000
+        endDate: dateFilter.endDate
       });
-      const sales = response.data.sales || [];
-      const stats = sales.reduce((acc, sale) => {
-        acc.count += 1;
-        acc.totalAmount += sale.totalAmount || 0;
-        acc.totalProfit += sale.totalProfit || 0;
-        return acc;
-      }, { count: 0, totalAmount: 0, totalProfit: 0 });
-      setPeriodStats(stats);
+      setPeriodStats(response.data.data || { count: 0, totalAmount: 0, totalProfit: 0 });
     } catch (error) {
       console.error('Period stats error:', error);
     } finally {

@@ -13,6 +13,20 @@ exports.getDashboard = async (req, res, next) => {
   }
 };
 
+exports.getPeriodStats = async (req, res, next) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const stats = await reportService.getPeriodStats(req.ownerId, startDate, endDate);
+    
+    res.status(200).json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 exports.getSalesReport = async (req, res, next) => {
   try {
     const report = await reportService.getSalesReport(req.ownerId, req.query);

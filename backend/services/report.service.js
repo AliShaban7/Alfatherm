@@ -84,6 +84,34 @@ class ReportService {
     };
   }
 
+  async getPeriodStats(ownerId, startDate, endDate) {
+    const matchQuery = { ownerId, status: 'completed' };
+    
+    if (startDate || endDate) {
+      matchQuery.date = {};
+      if (startDate) matchQuery.date.$gte = new Date(startDate);
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        matchQuery.date.$lte = end;
+      }
+    }
+
+    const result = await Sale.aggregate([
+      { $match: matchQuery },
+      {
+        $group: {
+          _id: null,
+          count: { $sum: 1 },
+          totalAmount: { $sum: '$totalAmount' },
+          totalProfit: { $sum: '$profit' }
+        }
+      }
+    ]);
+
+    return result[0] || { count: 0, totalAmount: 0, totalProfit: 0 };
+  }
+
   async getSalesReport(ownerId, filters = {}) {
     const { startDate, endDate, branchId, groupBy = 'day' } = filters;
 

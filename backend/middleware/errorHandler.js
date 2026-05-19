@@ -34,6 +34,12 @@ const errorHandler = (err, req, res, next) => {
     error = { message, statusCode: 401 };
   }
 
+  // MongoDB connection / timeout (often looks like "login broken" for one user)
+  if (err.name === 'MongoServerSelectionError' || err.name === 'MongoNetworkTimeoutError') {
+    const message = 'Verilənlər bazasına qoşulmaq mümkün olmadı. Bir az gözləyib yenidən cəhd edin.';
+    error = { message, statusCode: 503 };
+  }
+
   res.status(error.statusCode || 500).json({
     success: false,
     message: error.message || 'Server xətası',

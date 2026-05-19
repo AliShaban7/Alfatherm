@@ -4,8 +4,15 @@ const api = axios.create({
   baseURL: '/api',
   headers: {
     'Content-Type': 'application/json'
-  }
+  },
+  timeout: 15000 // 15 second timeout
 });
+
+// Simple in-memory cache for GET requests
+const cache = new Map();
+const CACHE_TTL = 30000; // 30 seconds
+
+const getCacheKey = (config) => `${config.method}:${config.url}:${JSON.stringify(config.params || {})}`;
 
 api.interceptors.request.use(
   (config) => {
@@ -13,6 +20,23 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    
+    // Check cache for GET requests (skip for auth routes)
+    if (config.method === 'get' && !config.url.includes('/auth/')) {
+      const cacheKey = getCacheKey(config);
+      const cached = cache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+        config.adapter = () => Promise.resolve({
+          data: cached.data,
+          status: 200,
+          statusText: 'OK',
+          headers: {},
+          config,
+          request: {}
+        });
+      }
+    }
+    
     return config;
   },
   (error) => {
@@ -21,7 +45,17 @@ api.interceptors.request.use(
 );
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Cache successful GET responses (skip auth routes)
+    if (response.config.method === 'get' && !response.config.url.includes('/auth/')) {
+      const cacheKey = getCacheKey(response.config);
+      cache.set(cacheKey, {
+        data: response.data,
+        timestamp: Date.now()
+      });
+    }
+    return response;
+  },
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
@@ -31,6 +65,9 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+// Export function to clear cache (call after mutations)
+export const clearApiCache = () => cache.clear();
 
 export const authAPI = {
   login: (data) => api.post('/auth/login', data),
@@ -43,26 +80,26 @@ export const productAPI = {
   getAll: (params) => api.get('/products', { params }),
   getById: (id) => api.get(`/products/${id}`),
   getWithStock: (id) => api.get(`/products/${id}/stock`),
-  create: (data) => api.post('/products', data),
-  update: (id, data) => api.put(`/products/${id}`, data),
-  delete: (id) => api.delete(`/products/${id}`)
+  create: (data) => api.post('/products', data).then(r => { clearApiCache(); return r; }),
+  update: (id, data) => api.put(`/products/${id}`, data).then(r => { clearApiCache(); return r; }),
+  delete: (id) => api.delete(`/products/${id}`).then(r => { clearApiCache(); return r; })
 };
 
 export const inventoryAPI = {
   getAll: () => api.get('/inventory'),
   getByWarehouse: (warehouseId) => api.get(`/inventory/warehouse/${warehouseId}`),
   getTransactions: (params) => api.get('/inventory/transactions', { params }),
-  productEntry: (data) => api.post('/inventory/entry', data),
-  transfer: (data) => api.post('/inventory/transfer', data),
-  update: (id, data) => api.put(`/inventory/${id}`, data),
-  delete: (id) => api.delete(`/inventory/${id}`)
+  productEntry: (data) => api.post('/inventory/entry', data).then(r => { clearApiCache(); return r; }),
+  transfer: (data) => api.post('/inventory/transfer', data).then(r => { clearApiCache(); return r; }),
+  update: (id, data) => api.put(`/inventory/${id}`, data).then(r => { clearApiCache(); return r; }),
+  delete: (id) => api.delete(`/inventory/${id}`).then(r => { clearApiCache(); return r; })
 };
 
 export const saleAPI = {
   getAll: (params) => api.get('/sales', { params }),
   getById: (id) => api.get(`/sales/${id}`),
-  create: (data) => api.post('/sales', data),
-  cancel: (id) => api.put(`/sales/${id}/cancel`),
+  create: (data) => api.post('/sales', data).then(r => { clearApiCache(); return r; }),
+  cancel: (id) => api.put(`/sales/${id}/cancel`).then(r => { clearApiCache(); return r; }),
   getDailySummary: (params) => api.get('/sales/daily-summary', { params })
 };
 
@@ -111,6 +148,7 @@ export const expenseAPI = {
 
 export const reportAPI = {
   getDashboard: (params) => api.get('/reports/dashboard', { params }),
+  getPeriodStats: (params) => api.get('/reports/period-stats', { params }),
   getSalesReport: (params) => api.get('/reports/sales', { params }),
   getProductSalesReport: (params) => api.get('/reports/products', { params }),
   getInventoryReport: () => api.get('/reports/inventory'),
