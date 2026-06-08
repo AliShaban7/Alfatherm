@@ -1,12 +1,16 @@
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { FiPlus, FiSearch, FiEye, FiFilter, FiPrinter, FiTrash2 } from 'react-icons/fi';
 import { saleAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { format } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
+import { printSaleReceipt } from '../utils/receipt';
+import { formatPaymentLabel } from '../utils/payment';
 
 const Sales = () => {
+  const location = useLocation();
+  const pendingPrepend = useRef(location.state?.newSale);
   const [sales, setSales] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
@@ -19,20 +23,39 @@ const Sales = () => {
   const { isOwner } = useAuth();
 
   useEffect(() => {
-    fetchSales();
+    const prepend = pendingPrepend.current;
+    if (prepend) {
+      pendingPrepend.current = null;
+      window.history.replaceState({}, document.title);
+    }
+    fetchSales(prepend);
   }, [filters.paymentType, pagination.page]);
 
-  const fetchSales = async () => {
-    try {
+  const fetchSales = async (prependSale) => {
+    const showPrependFirst = prependSale && pagination.page === 1;
+    if (showPrependFirst) {
+      setSales([prependSale]);
+      setLoading(false);
+    } else {
       setLoading(true);
+    }
+
+    try {
       const response = await saleAPI.getAll({
         ...filters,
-        page: pagination.page
+        page: pagination.page,
+        limit: 10
       });
-      setSales(response.data.sales);
+      let list = response.data.sales || [];
+      if (showPrependFirst) {
+        list = [prependSale, ...list.filter((s) => s._id !== prependSale._id)];
+      }
+      setSales(list);
       setPagination(response.data.pagination);
     } catch (error) {
-      toast.error('Satışları yükləmək mümkün olmadı');
+      if (!showPrependFirst) {
+        toast.error('Satışları yükləmək mümkün olmadı');
+      }
     } finally {
       setLoading(false);
     }
@@ -44,99 +67,35 @@ const Sales = () => {
     }).format(amount) + ' AZN';
   };
 
-  const getPaymentTypeBadge = (type) => {
-    return type === 'prepaid' 
-      ? <span className="badge badge-success">Nağd</span>
-      : <span className="badge badge-warning">Nisyə</span>;
+  const getPaymentBadge = (sale) => {
+    const label = formatPaymentLabel(sale.paymentType, sale.paymentMethod);
+    const isCredit = sale.paymentType === 'credit';
+    const isBank =
+      sale.paymentType === 'prepaid' &&
+      (sale.paymentMethod === 'pos' || sale.paymentMethod === 'bank');
+    const className = isCredit
+      ? 'badge badge-warning'
+      : isBank
+        ? 'badge badge-info'
+        : 'badge badge-success';
+    return <span className={className}>{label}</span>;
   };
 
-  const getPaymentMethodBadge = (method) => {
-    const methods = {
-      cash: 'Nağd',
-      pos: 'POS',
-      bank: 'Bank'
-    };
-    return methods[method] || '-';
-  };
-
-  const handlePrint = (sale) => {
-    const printWindow = window.open('', '', 'width=300,height=600');
-    const printContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Qəbz - ${sale.saleNumber}</title>
-        <style>
-          @media print {
-            @page { size: 80mm auto; margin: 0; }
-          }
-          body {
-            font-family: 'Courier New', monospace;
-            font-size: 12px;
-            width: 80mm;
-            margin: 0;
-            padding: 5mm;
-          }
-          .header { text-align: center; margin-bottom: 10px; border-bottom: 1px dashed #000; padding-bottom: 10px; }
-          .header h2 { margin: 5px 0; font-size: 16px; }
-          .info { margin-bottom: 10px; font-size: 11px; }
-          .items { margin: 10px 0; }
-          .item { display: flex; justify-content: space-between; margin: 5px 0; }
-          .item-detail { font-size: 10px; color: #666; }
-          .total { border-top: 1px dashed #000; margin-top: 10px; padding-top: 10px; font-weight: bold; }
-          .footer { text-align: center; margin-top: 15px; border-top: 1px dashed #000; padding-top: 10px; font-size: 10px; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h2>ALFATERM</h2>
-          <div>Qəbz #${sale.saleNumber}</div>
-        </div>
-        <div class="info">
-          <div>Tarix: ${format(new Date(sale.date), 'dd.MM.yyyy HH:mm')}</div>
-          <div>Müştəri: ${sale.customerId?.name || '-'}</div>
-          <div>Ödəniş: ${sale.paymentType === 'prepaid' ? 'Nağd' : 'Nisyə'} (${getPaymentMethodBadge(sale.paymentMethod)})</div>
-          ${sale.branchId ? `<div>Filial: ${sale.branchId.name}</div>` : ''}
-        </div>
-        <div class="items">
-          ${sale.items.map(item => `
-            <div class="item">
-              <div>
-                <div>${item.productName || item.productId?.name || '-'}</div>
-                <div class="item-detail">${item.quantity} x ${item.unitPrice.toFixed(2)} AZN${item.discount > 0 ? ` (-${item.discount.toFixed(2)} AZN)` : ''}</div>
-              </div>
-              <div>${((item.quantity * item.unitPrice) - (item.discount || 0)).toFixed(2)} AZN</div>
-            </div>
-          `).join('')}
-        </div>
-        <div class="total">
-          <div style="display: flex; justify-content: space-between;">
-            <span>TOPLAM:</span>
-            <span>${sale.totalAmount.toFixed(2)} AZN</span>
-          </div>
-          ${sale.paymentType === 'credit' ? `
-            <div style="display: flex; justify-content: space-between; font-size: 11px;">
-              <span>Ödənilib:</span>
-              <span>${(sale.paidAmount || 0).toFixed(2)} AZN</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 11px;">
-              <span>Qalıq:</span>
-              <span>${(sale.totalAmount - (sale.paidAmount || 0)).toFixed(2)} AZN</span>
-            </div>
-          ` : ''}
-        </div>
-        <div class="footer">
-          Təşəkkür edirik!
-        </div>
-      </body>
-      </html>
-    `;
-    printWindow.document.write(printContent);
-    printWindow.document.close();
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 250);
+  const handlePrint = async (sale) => {
+    try {
+      const response = await saleAPI.getById(sale._id);
+      const full = response.data.data;
+      printSaleReceipt(full, {
+        customerName: full.customerId?.name || '-',
+        warehouseName: full.warehouseId?.name || null,
+        branchName: full.branchId?.name || null,
+        cashierName: full.userId?.name,
+        formatDate: (d) => format(new Date(d), 'dd.MM.yyyy HH:mm'),
+        paymentLabel: formatPaymentLabel(full.paymentType, full.paymentMethod)
+      });
+    } catch {
+      toast.error('Çek məlumatını yükləmək mümkün olmadı');
+    }
   };
 
   const handleDelete = async (saleId) => {
@@ -181,7 +140,7 @@ const Sales = () => {
             onChange={(e) => setFilters({ ...filters, paymentType: e.target.value })}
           >
             <option value="">Bütün ödəniş tipləri</option>
-            <option value="prepaid">Nağd</option>
+            <option value="prepaid">Nağd / Bank</option>
             <option value="credit">Nisyə</option>
           </select>
           <input
@@ -221,9 +180,8 @@ const Sales = () => {
                     <th>Satış No</th>
                     <th>Tarix</th>
                     <th>Müştəri</th>
-                    <th>Filial</th>
-                    <th>Ödəniş Tipi</th>
-                    <th>Metod</th>
+                    <th>Anbar</th>
+                    <th>Ödəniş</th>
                     <th>Məbləğ</th>
                     {isOwner() && <th>Qazanc</th>}
                     <th style={{ width: '120px' }}></th>
@@ -235,9 +193,8 @@ const Sales = () => {
                       <td><strong>{sale.saleNumber}</strong></td>
                       <td>{format(new Date(sale.date), 'dd.MM.yyyy HH:mm')}</td>
                       <td>{sale.customerId?.name || '-'}</td>
-                      <td>{sale.branchId?.name || '-'}</td>
-                      <td>{getPaymentTypeBadge(sale.paymentType)}</td>
-                      <td>{getPaymentMethodBadge(sale.paymentMethod)}</td>
+                      <td>{sale.warehouseId?.name || sale.branchId?.name || '-'}</td>
+                      <td>{getPaymentBadge(sale)}</td>
                       <td><strong>{formatCurrency(sale.totalAmount)}</strong></td>
                       {isOwner() && (
                         <td style={{ color: 'var(--success)' }}>

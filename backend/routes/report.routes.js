@@ -20,6 +20,8 @@ router.get('/inventory', reportController.getInventoryReport);
 
 router.get('/branches', ownerOnly, reportController.getBranchReport);
 
+router.get('/salespersons', reportController.getSalespersonReport);
+
 router.get('/profit-loss', ownerOnly, reportController.getProfitLossReport);
 
 module.exports = router;

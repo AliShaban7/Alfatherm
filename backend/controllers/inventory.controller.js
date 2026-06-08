@@ -30,7 +30,8 @@ exports.transfer = async (req, res, next) => {
       req.body,
       req.ownerId,
       req.user._id,
-      req.canAccessMainWarehouse
+      req.canAccessMainWarehouse,
+      req.user
     );
     
     res.status(200).json({
@@ -75,7 +76,7 @@ exports.getAll = async (req, res, next) => {
 
 exports.getTransactions = async (req, res, next) => {
   try {
-    const result = await inventoryService.getTransactions(req.ownerId, req.query);
+    const result = await inventoryService.getTransactions(req.ownerId, req.query, req.user);
     
     res.status(200).json({
       success: true,
@@ -92,7 +93,8 @@ exports.update = async (req, res, next) => {
       req.params.id,
       req.body,
       req.ownerId,
-      req.user._id
+      req.user._id,
+      req.user
     );
     
     res.status(200).json({
@@ -109,7 +111,8 @@ exports.delete = async (req, res, next) => {
     await inventoryService.delete(
       req.params.id,
       req.ownerId,
-      req.user._id
+      req.user._id,
+      req.user
     );
     
     res.status(200).json({

@@ -1,11 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const { inventoryController } = require('../controllers');
-const { protect, ownerOnly, canSeeCostPrice, canAccessMainWarehouse, ownerDataIsolation } = require('../middleware/auth');
+const { protect, ownerOnly, canSeeCostPrice, canAccessMainWarehouse, ownerDataIsolation, employeeRestricted } = require('../middleware/auth');
 const { inventoryValidator } = require('../validators');
 const validateRequest = require('../middleware/validateRequest');
 
 router.use(protect);
+router.use(employeeRestricted);
 router.use(ownerDataIsolation);
 router.use(canSeeCostPrice);
 router.use(canAccessMainWarehouse);

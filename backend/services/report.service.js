@@ -5,126 +5,138 @@ const Debtor = require('../models/Debtor');
 const Creditor = require('../models/Creditor');
 const Expense = require('../models/Expense');
 const Product = require('../models/Product');
+const { ROLES } = require('../config/constants');
+
+// A founder (OWNER) sees only the goods they own, even inside a sale that mixes
+// several owners' products. A SUPER_OWNER sees every owner's full figures.
+const isOwnerScoped = (user) => user?.role === ROLES.OWNER;
 
 class ReportService {
-  async getDashboardSummary(ownerId, branchId = null) {
+  // Leading $match for a sales pipeline. Owners are restricted to sales that
+  // contain their goods; super owners match all owners.
+  _salesMatch(user, extra = {}) {
+    const match = { status: 'completed', ...extra };
+    if (isOwnerScoped(user)) {
+      match.ownerIds = user.ownerId;
+    }
+    return match;
+  }
+
+  // Stages that narrow a sale to a single owner's line items. Empty for super
+  // owners (who keep whole-sale figures).
+  _ownerItemStages(user) {
+    if (!isOwnerScoped(user)) return [];
+    return [
+      { $unwind: '$items' },
+      { $match: { 'items.productOwnerId': user.ownerId } }
+    ];
+  }
+
+  // Revenue/cost expressions: per-item when slicing by owner, per-sale otherwise.
+  _amountExpr(user) {
+    return isOwnerScoped(user) ? '$items.total' : '$totalAmount';
+  }
+
+  _costExpr(user) {
+    return isOwnerScoped(user)
+      ? { $multiply: ['$items.costPrice', '$items.quantity'] }
+      : '$totalCost';
+  }
+
+  // Reusable {count, totalAmount, totalProfit} over a date range.
+  async _salesSummary(user, dateRange, branchId) {
+    const extra = {};
+    if (branchId) extra.branchId = new mongoose.Types.ObjectId(branchId);
+    if (dateRange) extra.date = dateRange;
+
+    const pipeline = [
+      { $match: this._salesMatch(user, extra) },
+      ...this._ownerItemStages(user),
+      {
+        $group: {
+          _id: null,
+          // addToSet so an item-level unwind doesn't overcount sales
+          saleIds: { $addToSet: '$_id' },
+          totalAmount: { $sum: this._amountExpr(user) },
+          totalCost: { $sum: this._costExpr(user) }
+        }
+      }
+    ];
+
+    const r = (await Sale.aggregate(pipeline))[0];
+    return r
+      ? { count: r.saleIds.length, totalAmount: r.totalAmount, totalProfit: r.totalAmount - r.totalCost }
+      : { count: 0, totalAmount: 0, totalProfit: 0 };
+  }
+
+  async getDashboardSummary(user, branchId = null) {
     const today = new Date();
     const startOfDay = new Date(today.setHours(0, 0, 0, 0));
     const endOfDay = new Date(today.setHours(23, 59, 59, 999));
-    
+
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
     const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
 
-    const matchQuery = { ownerId, status: 'completed' };
-    if (branchId) {
-      matchQuery.branchId = new mongoose.Types.ObjectId(branchId);
-    }
+    // Debtors/creditors/inventory are stored per-owner already (credit debt is
+    // split per owner at sale time), so a simple ownerId filter is correct.
+    const ownerMatch = isOwnerScoped(user) ? { ownerId: user.ownerId } : {};
 
     const [
-      todaySales,
-      monthSales,
+      today_,
+      month,
       totalDebtors,
       totalCreditors,
       lowStockProducts
     ] = await Promise.all([
-      Sale.aggregate([
-        { $match: { ...matchQuery, date: { $gte: startOfDay, $lte: endOfDay } } },
-        {
-          $group: {
-            _id: null,
-            count: { $sum: 1 },
-            totalAmount: { $sum: '$totalAmount' },
-            totalProfit: { $sum: '$profit' }
-          }
-        }
-      ]),
-      Sale.aggregate([
-        { $match: { ...matchQuery, date: { $gte: startOfMonth, $lte: endOfMonth } } },
-        {
-          $group: {
-            _id: null,
-            count: { $sum: 1 },
-            totalAmount: { $sum: '$totalAmount' },
-            totalProfit: { $sum: '$profit' }
-          }
-        }
-      ]),
+      this._salesSummary(user, { $gte: startOfDay, $lte: endOfDay }, branchId),
+      this._salesSummary(user, { $gte: startOfMonth, $lte: endOfMonth }, branchId),
       Debtor.aggregate([
-        { $match: { ownerId, status: { $ne: 'paid' } } },
-        {
-          $group: {
-            _id: null,
-            count: { $sum: 1 },
-            totalRemaining: { $sum: '$remainingAmount' }
-          }
-        }
+        { $match: { ...ownerMatch, status: { $ne: 'paid' } } },
+        { $group: { _id: null, count: { $sum: 1 }, totalRemaining: { $sum: '$remainingAmount' } } }
       ]),
       Creditor.aggregate([
-        { $match: { ownerId, status: { $ne: 'paid' } } },
-        {
-          $group: {
-            _id: null,
-            count: { $sum: 1 },
-            totalRemaining: { $sum: '$remainingAmount' }
-          }
-        }
+        { $match: { ...ownerMatch, status: { $ne: 'paid' } } },
+        { $group: { _id: null, count: { $sum: 1 }, totalRemaining: { $sum: '$remainingAmount' } } }
       ]),
       Inventory.aggregate([
-        { $match: { ownerId, quantity: { $lte: 5, $gt: 0 } } },
+        { $match: { ...ownerMatch, quantity: { $lte: 5, $gt: 0 } } },
         { $count: 'count' }
       ])
     ]);
 
     return {
-      today: todaySales[0] || { count: 0, totalAmount: 0, totalProfit: 0 },
-      month: monthSales[0] || { count: 0, totalAmount: 0, totalProfit: 0 },
+      today: today_,
+      month,
       debtors: totalDebtors[0] || { count: 0, totalRemaining: 0 },
       creditors: totalCreditors[0] || { count: 0, totalRemaining: 0 },
       lowStockProducts: lowStockProducts[0]?.count || 0
     };
   }
 
-  async getPeriodStats(ownerId, startDate, endDate) {
-    const matchQuery = { ownerId, status: 'completed' };
-    
+  async getPeriodStats(user, startDate, endDate) {
+    let dateRange = null;
     if (startDate || endDate) {
-      matchQuery.date = {};
-      if (startDate) matchQuery.date.$gte = new Date(startDate);
+      dateRange = {};
+      if (startDate) dateRange.$gte = new Date(startDate);
       if (endDate) {
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
-        matchQuery.date.$lte = end;
+        dateRange.$lte = end;
       }
     }
 
-    const result = await Sale.aggregate([
-      { $match: matchQuery },
-      {
-        $group: {
-          _id: null,
-          count: { $sum: 1 },
-          totalAmount: { $sum: '$totalAmount' },
-          totalProfit: { $sum: '$profit' }
-        }
-      }
-    ]);
-
-    return result[0] || { count: 0, totalAmount: 0, totalProfit: 0 };
+    return this._salesSummary(user, dateRange, null);
   }
 
-  async getSalesReport(ownerId, filters = {}) {
+  async getSalesReport(user, filters = {}) {
     const { startDate, endDate, branchId, groupBy = 'day' } = filters;
 
-    const matchQuery = { ownerId, status: 'completed' };
-
-    if (branchId) {
-      matchQuery.branchId = new mongoose.Types.ObjectId(branchId);
-    }
-
+    const extra = {};
+    if (branchId) extra.branchId = new mongoose.Types.ObjectId(branchId);
     if (startDate || endDate) {
-      matchQuery.date = {};
-      if (startDate) matchQuery.date.$gte = new Date(startDate);
-      if (endDate) matchQuery.date.$lte = new Date(endDate);
+      extra.date = {};
+      if (startDate) extra.date.$gte = new Date(startDate);
+      if (endDate) extra.date.$lte = new Date(endDate);
     }
 
     let groupByField;
@@ -139,43 +151,54 @@ class ReportService {
         groupByField = { year: { $year: '$date' }, month: { $month: '$date' }, day: { $dayOfMonth: '$date' } };
     }
 
+    const amount = this._amountExpr(user);
+    const cost = this._costExpr(user);
+    const pre = [
+      { $match: this._salesMatch(user, extra) },
+      ...this._ownerItemStages(user)
+    ];
+
     const report = await Sale.aggregate([
-      { $match: matchQuery },
+      ...pre,
       {
         $group: {
           _id: groupByField,
-          salesCount: { $sum: 1 },
-          totalAmount: { $sum: '$totalAmount' },
-          totalCost: { $sum: '$totalCost' },
-          totalProfit: { $sum: '$profit' },
-          cashSales: {
-            $sum: { $cond: [{ $eq: ['$paymentMethod', 'cash'] }, '$totalAmount', 0] }
-          },
-          posSales: {
-            $sum: { $cond: [{ $eq: ['$paymentMethod', 'pos'] }, '$totalAmount', 0] }
-          },
-          bankSales: {
-            $sum: { $cond: [{ $eq: ['$paymentMethod', 'bank'] }, '$totalAmount', 0] }
-          },
-          creditSales: {
-            $sum: { $cond: [{ $eq: ['$paymentType', 'credit'] }, '$totalAmount', 0] }
-          }
+          saleIds: { $addToSet: '$_id' },
+          totalAmount: { $sum: amount },
+          totalCost: { $sum: cost },
+          cashSales: { $sum: { $cond: [{ $eq: ['$paymentMethod', 'cash'] }, amount, 0] } },
+          posSales: { $sum: { $cond: [{ $eq: ['$paymentMethod', 'pos'] }, amount, 0] } },
+          bankSales: { $sum: { $cond: [{ $eq: ['$paymentMethod', 'bank'] }, amount, 0] } },
+          creditSales: { $sum: { $cond: [{ $eq: ['$paymentType', 'credit'] }, amount, 0] } }
         }
       },
+      {
+        $addFields: {
+          salesCount: { $size: '$saleIds' },
+          totalProfit: { $subtract: ['$totalAmount', '$totalCost'] }
+        }
+      },
+      { $project: { saleIds: 0 } },
       { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } }
     ]);
 
     const totals = await Sale.aggregate([
-      { $match: matchQuery },
+      ...pre,
       {
         $group: {
           _id: null,
-          salesCount: { $sum: 1 },
-          totalAmount: { $sum: '$totalAmount' },
-          totalCost: { $sum: '$totalCost' },
-          totalProfit: { $sum: '$profit' }
+          saleIds: { $addToSet: '$_id' },
+          totalAmount: { $sum: amount },
+          totalCost: { $sum: cost }
         }
-      }
+      },
+      {
+        $addFields: {
+          salesCount: { $size: '$saleIds' },
+          totalProfit: { $subtract: ['$totalAmount', '$totalCost'] }
+        }
+      },
+      { $project: { saleIds: 0 } }
     ]);
 
     return {
@@ -184,24 +207,26 @@ class ReportService {
     };
   }
 
-  async getProductSalesReport(ownerId, filters = {}) {
+  async getProductSalesReport(user, filters = {}) {
     const { startDate, endDate, branchId, limit = 20 } = filters;
 
-    const matchQuery = { ownerId, status: 'completed' };
-
-    if (branchId) {
-      matchQuery.branchId = new mongoose.Types.ObjectId(branchId);
-    }
-
+    const extra = {};
+    if (branchId) extra.branchId = new mongoose.Types.ObjectId(branchId);
     if (startDate || endDate) {
-      matchQuery.date = {};
-      if (startDate) matchQuery.date.$gte = new Date(startDate);
-      if (endDate) matchQuery.date.$lte = new Date(endDate);
+      extra.date = {};
+      if (startDate) extra.date.$gte = new Date(startDate);
+      if (endDate) extra.date.$lte = new Date(endDate);
     }
+
+    // Always unwind to the product line; for owners also drop other owners' lines.
+    const itemMatch = isOwnerScoped(user)
+      ? [{ $match: { 'items.productOwnerId': user.ownerId } }]
+      : [];
 
     const report = await Sale.aggregate([
-      { $match: matchQuery },
+      { $match: this._salesMatch(user, extra) },
       { $unwind: '$items' },
+      ...itemMatch,
       {
         $group: {
           _id: '$items.productId',
@@ -211,10 +236,7 @@ class ReportService {
           totalCost: { $sum: { $multiply: ['$items.costPrice', '$items.quantity'] } },
           totalProfit: {
             $sum: {
-              $subtract: [
-                '$items.total',
-                { $multiply: ['$items.costPrice', '$items.quantity'] }
-              ]
+              $subtract: ['$items.total', { $multiply: ['$items.costPrice', '$items.quantity'] }]
             }
           }
         }
@@ -226,9 +248,11 @@ class ReportService {
     return report;
   }
 
-  async getInventoryReport(ownerId, canSeeCostPrice = false) {
+  async getInventoryReport(user, canSeeCostPrice = false) {
+    const match = isOwnerScoped(user) ? { ownerId: user.ownerId } : {};
+
     const pipeline = [
-      { $match: { ownerId } },
+      { $match: match },
       {
         $lookup: {
           from: 'products',
@@ -285,19 +309,22 @@ class ReportService {
     };
   }
 
-  async getBranchReport(ownerId, filters = {}) {
+  async getBranchReport(user, filters = {}) {
     const { startDate, endDate } = filters;
 
-    const matchQuery = { ownerId, status: 'completed' };
-
+    const extra = {};
     if (startDate || endDate) {
-      matchQuery.date = {};
-      if (startDate) matchQuery.date.$gte = new Date(startDate);
-      if (endDate) matchQuery.date.$lte = new Date(endDate);
+      extra.date = {};
+      if (startDate) extra.date.$gte = new Date(startDate);
+      if (endDate) extra.date.$lte = new Date(endDate);
     }
 
+    const amount = this._amountExpr(user);
+    const cost = this._costExpr(user);
+
     const report = await Sale.aggregate([
-      { $match: matchQuery },
+      { $match: this._salesMatch(user, extra) },
+      ...this._ownerItemStages(user),
       {
         $lookup: {
           from: 'branches',
@@ -312,83 +339,134 @@ class ReportService {
           _id: '$branchId',
           branchName: { $first: '$branch.name' },
           branchCode: { $first: '$branch.code' },
-          salesCount: { $sum: 1 },
-          totalAmount: { $sum: '$totalAmount' },
-          totalCost: { $sum: '$totalCost' },
-          totalProfit: { $sum: '$profit' }
+          saleIds: { $addToSet: '$_id' },
+          totalAmount: { $sum: amount },
+          totalCost: { $sum: cost }
         }
       },
+      {
+        $addFields: {
+          salesCount: { $size: '$saleIds' },
+          totalProfit: { $subtract: ['$totalAmount', '$totalCost'] }
+        }
+      },
+      { $project: { saleIds: 0 } },
       { $sort: { totalAmount: -1 } }
     ]);
 
     return report;
   }
 
-  async getProfitLossReport(ownerId, filters = {}) {
+  // Per-salesman totals for the bonus system. Owners see only the value of
+  // their own goods sold by each salesman; super owner sees the full figures.
+  async getSalespersonReport(user, filters = {}) {
+    const { startDate, endDate, branchId } = filters;
+
+    const extra = {};
+    if (branchId) extra.branchId = new mongoose.Types.ObjectId(branchId);
+    if (startDate || endDate) {
+      extra.date = {};
+      if (startDate) extra.date.$gte = new Date(startDate);
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        extra.date.$lte = end;
+      }
+    }
+
+    const amount = this._amountExpr(user);
+    const cost = this._costExpr(user);
+
+    const report = await Sale.aggregate([
+      { $match: { ...this._salesMatch(user, extra), salespersonId: { $ne: null } } },
+      ...this._ownerItemStages(user),
+      {
+        $group: {
+          _id: '$salespersonId',
+          salespersonName: { $first: '$salespersonName' },
+          saleIds: { $addToSet: '$_id' },
+          totalAmount: { $sum: amount },
+          totalCost: { $sum: cost }
+        }
+      },
+      {
+        $addFields: {
+          salesCount: { $size: '$saleIds' },
+          totalProfit: { $subtract: ['$totalAmount', '$totalCost'] }
+        }
+      },
+      { $project: { saleIds: 0 } },
+      { $sort: { totalAmount: -1 } }
+    ]);
+
+    return report;
+  }
+
+  async getProfitLossReport(user, filters = {}) {
     const { startDate, endDate, branchId } = filters;
 
     const dateFilter = {};
     if (startDate) dateFilter.$gte = new Date(startDate);
     if (endDate) dateFilter.$lte = new Date(endDate);
 
-    const salesMatchQuery = { ownerId, status: 'completed' };
+    const salesExtra = {};
     const expenseMatchQuery = {};
 
     if (branchId) {
-      salesMatchQuery.branchId = new mongoose.Types.ObjectId(branchId);
+      salesExtra.branchId = new mongoose.Types.ObjectId(branchId);
       expenseMatchQuery.branchId = new mongoose.Types.ObjectId(branchId);
     }
 
     if (startDate || endDate) {
-      salesMatchQuery.date = dateFilter;
+      salesExtra.date = dateFilter;
       expenseMatchQuery.date = dateFilter;
     }
 
-    if (ownerId) {
+    // Founders carry their own expenses plus shared ones; super owners see all.
+    if (isOwnerScoped(user)) {
       expenseMatchQuery.$or = [
-        { ownerId },
+        { ownerId: user.ownerId },
         { isShared: true }
       ];
     }
 
+    const amount = this._amountExpr(user);
+    const cost = this._costExpr(user);
+
     const [salesData, expenseData] = await Promise.all([
       Sale.aggregate([
-        { $match: salesMatchQuery },
+        { $match: this._salesMatch(user, salesExtra) },
+        ...this._ownerItemStages(user),
         {
           $group: {
             _id: null,
-            totalRevenue: { $sum: '$totalAmount' },
-            totalCost: { $sum: '$totalCost' },
-            grossProfit: { $sum: '$profit' }
+            totalRevenue: { $sum: amount },
+            totalCost: { $sum: cost }
           }
         }
       ]),
       Expense.aggregate([
         { $match: expenseMatchQuery },
-        {
-          $group: {
-            _id: '$category',
-            amount: { $sum: '$amount' }
-          }
-        }
+        { $group: { _id: '$category', amount: { $sum: '$amount' } } }
       ])
     ]);
 
-    const sales = salesData[0] || { totalRevenue: 0, totalCost: 0, grossProfit: 0 };
+    const salesAgg = salesData[0] || { totalRevenue: 0, totalCost: 0 };
+    const grossProfit = salesAgg.totalRevenue - salesAgg.totalCost;
     const totalExpenses = expenseData.reduce((sum, exp) => sum + exp.amount, 0);
-    const netProfit = sales.grossProfit - totalExpenses;
+    const netProfit = grossProfit - totalExpenses;
 
     return {
-      revenue: sales.totalRevenue,
-      costOfGoods: sales.totalCost,
-      grossProfit: sales.grossProfit,
+      revenue: salesAgg.totalRevenue,
+      costOfGoods: salesAgg.totalCost,
+      grossProfit,
       expenses: {
         byCategory: expenseData,
         total: totalExpenses
       },
       netProfit,
-      profitMargin: sales.totalRevenue > 0 
-        ? ((netProfit / sales.totalRevenue) * 100).toFixed(2) 
+      profitMargin: salesAgg.totalRevenue > 0
+        ? ((netProfit / salesAgg.totalRevenue) * 100).toFixed(2)
         : 0
     };
   }

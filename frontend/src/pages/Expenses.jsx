@@ -3,16 +3,7 @@ import { FiPlus, FiEdit2, FiTrash2, FiFilter } from 'react-icons/fi';
 import { expenseAPI, branchAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { format } from 'date-fns';
-
-const EXPENSE_CATEGORIES = [
-  { value: 'rent', label: 'İcarə' },
-  { value: 'salary', label: 'Maaş' },
-  { value: 'logistics', label: 'Logistika' },
-  { value: 'utilities', label: 'Kommunal' },
-  { value: 'maintenance', label: 'Təmir' },
-  { value: 'marketing', label: 'Marketing' },
-  { value: 'other', label: 'Digər' }
-];
+import { EXPENSE_CATEGORIES } from '../utils/labels';
 
 const Expenses = () => {
   const [expenses, setExpenses] = useState([]);

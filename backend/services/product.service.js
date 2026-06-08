@@ -10,7 +10,9 @@ class ProductService {
       sku = await Product.generateSKU(ownerId);
     } else {
       sku = sku.toUpperCase();
-      const existingProduct = await Product.findOne({ sku, ownerId });
+      // SKU is globally unique, so check across all owners — otherwise a clash
+      // with the other owner's SKU would surface as a raw DB error on save.
+      const existingProduct = await Product.findOne({ sku });
       if (existingProduct) {
         throw new Error('Bu SKU ilə məhsul artıq mövcuddur');
       }
@@ -18,6 +20,13 @@ class ProductService {
 
     // Set default costPrice if not provided
     const costPrice = productData.costPrice || 0;
+
+    // Min price must cover cost — otherwise employees could sell at a loss,
+    // which is exactly what min-price protection exists to prevent. (Mirrors
+    // the same guard in update().)
+    if (productData.minPrice !== undefined && productData.minPrice < costPrice) {
+      throw new Error('Minimum qiymət maya dəyərindən az ola bilməz');
+    }
 
     const product = await Product.create({
       ...productData,
@@ -33,7 +42,7 @@ class ProductService {
   async getAll(ownerId, filters = {}, canSeeCostPrice = false, user = null) {
     const query = { isActive: true };
     
-    if (user?.role !== ROLES.EMPLOYEE && user?.role !== ROLES.SUPER_OWNER) {
+    if (user?.role !== ROLES.SUPER_OWNER && user?.role !== ROLES.EMPLOYEE) {
       query.ownerId = ownerId;
     }
 
@@ -79,8 +88,16 @@ class ProductService {
     };
   }
 
-  async getById(id, ownerId, canSeeCostPrice = false) {
-    const product = await Product.findOne({ _id: id, ownerId });
+  // Owner filter for a single-resource lookup. Super owner (director) and, for
+  // read paths, employees may act on any owner's products; founders are scoped.
+  _ownerScope(ownerId, user, allowEmployee = false) {
+    if (user?.role === ROLES.SUPER_OWNER) return {};
+    if (allowEmployee && user?.role === ROLES.EMPLOYEE) return {};
+    return { ownerId };
+  }
+
+  async getById(id, ownerId, canSeeCostPrice = false, user = null) {
+    const product = await Product.findOne({ _id: id, ...this._ownerScope(ownerId, user, true) });
 
     if (!product) {
       throw new Error('Məhsul tapılmadı');
@@ -93,13 +110,18 @@ class ProductService {
     return product;
   }
 
-  async update(id, updateData, ownerId, canSeeCostPrice = false) {
+  async update(id, updateData, ownerId, canSeeCostPrice = false, user = null) {
     if (!canSeeCostPrice) {
       delete updateData.costPrice;
     }
 
+    const scope = this._ownerScope(ownerId, user);
+
+    // A product's owner must never change via an update.
+    delete updateData.ownerId;
+
     // Fetch existing product to validate price relationships
-    const existingProduct = await Product.findOne({ _id: id, ownerId });
+    const existingProduct = await Product.findOne({ _id: id, ...scope });
     if (!existingProduct) {
       throw new Error('Məhsul tapılmadı');
     }
@@ -119,7 +141,7 @@ class ProductService {
     }
 
     const product = await Product.findOneAndUpdate(
-      { _id: id, ownerId },
+      { _id: id, ...scope },
       updateData,
       { new: true, runValidators: false }  // Disable validators since we're doing manual validation
     );
@@ -131,10 +153,11 @@ class ProductService {
     return canSeeCostPrice ? product : product.toEmployeeJSON();
   }
 
-  async delete(id, ownerId) {
-    const inventory = await Inventory.findOne({ 
-      productId: id, 
-      ownerId,
+  async delete(id, ownerId, user = null) {
+    // Block deletion if any warehouse still holds stock of this product
+    // (scoped to the product's owner via the stock rows themselves).
+    const inventory = await Inventory.findOne({
+      productId: id,
       quantity: { $gt: 0 }
     });
 
@@ -143,7 +166,7 @@ class ProductService {
     }
 
     const product = await Product.findOneAndUpdate(
-      { _id: id, ownerId },
+      { _id: id, ...this._ownerScope(ownerId, user) },
       { isActive: false },
       { new: true }
     );
@@ -155,14 +178,15 @@ class ProductService {
     return { message: 'Məhsul uğurla silindi' };
   }
 
-  async getProductWithStock(id, ownerId, canSeeCostPrice = false) {
-    const product = await Product.findOne({ _id: id, ownerId }).lean();
+  async getProductWithStock(id, ownerId, canSeeCostPrice = false, user = null) {
+    const product = await Product.findOne({ _id: id, ...this._ownerScope(ownerId, user, true) }).lean();
 
     if (!product) {
       throw new Error('Məhsul tapılmadı');
     }
 
-    const inventory = await Inventory.find({ productId: id, ownerId })
+    // Stock rows belong to the product's owner; match the product, not the viewer.
+    const inventory = await Inventory.find({ productId: id, ownerId: product.ownerId })
       .populate('warehouseId', 'name code type')
       .lean();
 

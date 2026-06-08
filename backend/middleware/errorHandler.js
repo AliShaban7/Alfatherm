@@ -12,8 +12,13 @@ const errorHandler = (err, req, res, next) => {
 
   // Mongoose duplicate key
   if (err.code === 11000) {
-    const field = Object.keys(err.keyValue)[0];
-    const message = `Bu ${field} artıq mövcuddur`;
+    const field = Object.keys(err.keyValue || {})[0];
+    const fieldMessages = {
+      phone: 'Bu telefon nömrəsi artıq sistemdə mövcuddur',
+      voen: 'Bu VÖEN artıq sistemdə mövcuddur',
+      fin: 'Bu FIN artıq sistemdə mövcuddur'
+    };
+    const message = fieldMessages[field] || `Bu ${field} artıq mövcuddur`;
     error = { message, statusCode: 400 };
   }
 
@@ -40,7 +45,7 @@ const errorHandler = (err, req, res, next) => {
     error = { message, statusCode: 503 };
   }
 
-  res.status(error.statusCode || 500).json({
+  res.status(err.statusCode || error.statusCode || 500).json({
     success: false,
     message: error.message || 'Server xətası',
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack })

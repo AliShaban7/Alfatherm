@@ -18,24 +18,12 @@ const customerSchema = new mongoose.Schema({
   },
   voen: {
     type: String,
-    trim: true,
-    sparse: true,
-    validate: {
-      validator: async function(value) {
-        if (!value) return true;
-        const customer = await this.constructor.findOne({ 
-          voen: value, 
-          _id: { $ne: this._id } 
-        });
-        return !customer;
-      },
-      message: 'Bu VÖEN artıq sistemdə mövcuddur'
-    }
+    trim: true
   },
   fin: {
     type: String,
     trim: true,
-    sparse: true
+    uppercase: true
   },
   address: {
     type: String
@@ -45,7 +33,8 @@ const customerSchema = new mongoose.Schema({
   },
   phone: {
     type: String,
-    required: [true, 'Telefon nömrəsi daxil edin']
+    required: [true, 'Telefon nömrəsi daxil edin'],
+    trim: true
   },
   email: {
     type: String,
@@ -89,7 +78,19 @@ const customerSchema = new mongoose.Schema({
 });
 
 customerSchema.index({ ownerId: 1, name: 'text' });
-customerSchema.index({ ownerId: 1, voen: 1 });
 customerSchema.index({ ownerId: 1, type: 1 });
+
+customerSchema.index(
+  { phone: 1 },
+  { unique: true, partialFilterExpression: { isActive: true } }
+);
+customerSchema.index(
+  { voen: 1 },
+  { unique: true, partialFilterExpression: { isActive: true, voen: { $type: 'string', $nin: [null, ''] } } }
+);
+customerSchema.index(
+  { fin: 1 },
+  { unique: true, partialFilterExpression: { isActive: true, fin: { $type: 'string', $nin: [null, ''] } } }
+);
 
 module.exports = mongoose.model('Customer', customerSchema);

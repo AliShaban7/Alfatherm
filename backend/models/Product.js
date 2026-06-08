@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const Counter = require('./Counter');
 const { PRODUCT_CATEGORIES, PRODUCT_UNITS } = require('../config/constants');
 
 const productSchema = new mongoose.Schema({
@@ -109,22 +110,29 @@ productSchema.methods.toEmployeeJSON = function() {
   return obj;
 };
 
-// Auto-generate SKU
+// Auto-generate a globally-unique SKU (used only when none is entered manually).
+// Format: PRD-<OWNERCODE>-NNNN, e.g. PRD-ZAU-0007.
+//
+// SKUs are globally unique, but the two owners' ids both start with "owne",
+// so the old substring(0,4) prefix + per-owner sequence produced colliding
+// numbers (both got PRD-OWNE-0001). Two defences here:
+//   1. A distinct owner code derived from the id (zaur -> ZAU, adalat -> ADA).
+//   2. An atomic Counter keyed by the prefix — so even if two owners ever
+//      mapped to the same code, the shared sequence still yields unique numbers
+//      with no race between concurrent creates.
+// The loop additionally skips any number already taken by a manually-typed SKU.
 productSchema.statics.generateSKU = async function(ownerId) {
-  const lastProduct = await this.findOne({ ownerId })
-    .sort({ createdAt: -1 })
-    .select('sku');
-  
-  if (!lastProduct || !lastProduct.sku) {
-    return `PRD-${ownerId.substring(0, 4).toUpperCase()}-0001`;
-  }
-  
-  // Extract number from last SKU (format: PRD-XXXX-NNNN)
-  const match = lastProduct.sku.match(/(\d+)$/);
-  const lastNumber = match ? parseInt(match[1]) : 0;
-  const newNumber = (lastNumber + 1).toString().padStart(4, '0');
-  
-  return `PRD-${ownerId.substring(0, 4).toUpperCase()}-${newNumber}`;
+  const segment = String(ownerId).split('_')[1] || String(ownerId);
+  const ownerCode = segment.slice(0, 3).toUpperCase() || 'GEN';
+  const prefix = `PRD-${ownerCode}`;
+
+  let sku;
+  do {
+    const seq = await Counter.next(`sku:${prefix}`);
+    sku = `${prefix}-${seq.toString().padStart(4, '0')}`;
+  } while (await this.exists({ sku }));
+
+  return sku;
 };
 
 module.exports = mongoose.model('Product', productSchema);

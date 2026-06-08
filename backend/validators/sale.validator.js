@@ -9,7 +9,11 @@ exports.createSaleValidation = [
   body('warehouseId')
     .notEmpty().withMessage('Anbar seçin')
     .isMongoId().withMessage('Düzgün anbar ID daxil edin'),
-  
+
+  body('salespersonId')
+    .notEmpty().withMessage('Satıcı seçin')
+    .isMongoId().withMessage('Düzgün satıcı ID daxil edin'),
+
   body('items')
     .isArray({ min: 1 }).withMessage('Minimum 1 məhsul əlavə edin'),
   
@@ -30,7 +34,7 @@ exports.createSaleValidation = [
     .isIn(Object.values(PAYMENT_TYPES)).withMessage('Düzgün ödəniş tipi seçin'),
   
   body('paymentMethod')
-    .optional()
+    .optional({ values: 'falsy' })
     .isIn(Object.values(PAYMENT_METHODS)).withMessage('Düzgün ödəniş metodu seçin'),
   
   body('isOfficial')
@@ -38,7 +42,7 @@ exports.createSaleValidation = [
     .isBoolean().withMessage('Düzgün dəyər daxil edin'),
   
   body('paidAmount')
-    .optional()
+    .optional({ values: 'falsy' })
     .isFloat({ min: 0 }).withMessage('Ödənilən məbləğ mənfi ola bilməz'),
   
   body('note').optional().trim()

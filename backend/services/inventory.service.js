@@ -108,7 +108,7 @@ class InventoryService {
     }
   }
 
-  async transfer(data, ownerId, userId, canAccessMainWarehouse) {
+  async transfer(data, ownerId, userId, canAccessMainWarehouse, user = null) {
     const { productId, fromWarehouseId, toWarehouseId, quantity, note } = data;
 
     const [fromWarehouse, toWarehouse] = await Promise.all([
@@ -120,20 +120,26 @@ class InventoryService {
       throw new Error('Anbar tapılmadı');
     }
 
-    if ((fromWarehouse.type === WAREHOUSE_TYPES.MAIN || toWarehouse.type === WAREHOUSE_TYPES.MAIN) 
+    if ((fromWarehouse.type === WAREHOUSE_TYPES.MAIN || toWarehouse.type === WAREHOUSE_TYPES.MAIN)
         && !canAccessMainWarehouse) {
       throw new Error('Əsas anbara giriş icazəniz yoxdur');
     }
 
-    const product = await Product.findOne({ _id: productId, ownerId });
+    // Super owner (director) may move any owner's stock; founders only their own.
+    const productScope = user?.role === ROLES.SUPER_OWNER
+      ? { _id: productId }
+      : { _id: productId, ownerId };
+    const product = await Product.findOne(productScope);
     if (!product) {
       throw new Error('Məhsul tapılmadı');
     }
+    // All stock rows for this transfer belong to the product's owner.
+    ownerId = product.ownerId;
 
-    const fromInventory = await Inventory.findOne({ 
-      productId, 
-      warehouseId: fromWarehouseId, 
-      ownerId 
+    const fromInventory = await Inventory.findOne({
+      productId,
+      warehouseId: fromWarehouseId,
+      ownerId
     });
 
     if (!fromInventory || fromInventory.quantity < quantity) {
@@ -234,6 +240,39 @@ class InventoryService {
     return { ...inventory.toObject(), costPrice: costPriceForSale };
   }
 
+  // Reverse a sale deduction: add the quantity back to the warehouse and log a
+  // RETURN transaction. Recreates the inventory row if it was removed meanwhile.
+  async restoreForSale(productId, warehouseId, quantity, saleId, ownerId, userId, session) {
+    let inventory = await Inventory.findOne({ productId, warehouseId, ownerId }).session(session);
+
+    if (inventory) {
+      inventory.quantity += quantity;
+      inventory.lastUpdated = new Date();
+      await inventory.save({ session });
+    } else {
+      const created = await Inventory.create([{
+        productId,
+        warehouseId,
+        ownerId,
+        quantity
+      }], { session });
+      inventory = created[0];
+    }
+
+    await InventoryTransaction.create([{
+      type: INVENTORY_TRANSACTION_TYPES.RETURN,
+      productId,
+      ownerId,
+      toWarehouseId: warehouseId,
+      quantity,
+      saleId,
+      note: 'Satış ləğvi - stok bərpası',
+      createdBy: userId
+    }], { session });
+
+    return inventory;
+  }
+
   async getByWarehouse(warehouseId, ownerId, canSeeCostPrice = false, user = null) {
     const warehouse = await Warehouse.findById(warehouseId);
     if (!warehouse) {
@@ -246,7 +285,7 @@ class InventoryService {
     }
 
     const query = { warehouseId, quantity: { $gt: 0 } };
-    if (user?.role !== ROLES.EMPLOYEE && user?.role !== ROLES.SUPER_OWNER) {
+    if (user?.role !== ROLES.SUPER_OWNER && user?.role !== ROLES.EMPLOYEE) {
       query.ownerId = ownerId;
     }
 
@@ -273,7 +312,7 @@ class InventoryService {
     }
 
     const query = { quantity: { $gt: 0 } };
-    if (user?.role !== ROLES.EMPLOYEE && user?.role !== ROLES.SUPER_OWNER) {
+    if (user?.role !== ROLES.SUPER_OWNER && user?.role !== ROLES.EMPLOYEE) {
       query.ownerId = ownerId;
     }
 
@@ -288,8 +327,9 @@ class InventoryService {
     }));
   }
 
-  async getTransactions(ownerId, filters = {}) {
-    const query = { ownerId };
+  async getTransactions(ownerId, filters = {}, user = null) {
+    // Super owner sees every owner's movements; founders only their own.
+    const query = user?.role === ROLES.SUPER_OWNER ? {} : { ownerId };
 
     if (filters.type) {
       query.type = filters.type;
@@ -344,12 +384,19 @@ class InventoryService {
     };
   }
 
-  async update(inventoryId, data, ownerId, userId) {
-    const inventory = await Inventory.findOne({ _id: inventoryId, ownerId });
-    
+  async update(inventoryId, data, ownerId, userId, user = null) {
+    // Super owner can adjust any owner's stock row; founders only their own.
+    const scope = user?.role === ROLES.SUPER_OWNER
+      ? { _id: inventoryId }
+      : { _id: inventoryId, ownerId };
+    const inventory = await Inventory.findOne(scope);
+
     if (!inventory) {
       throw new Error('Stok tapılmadı');
     }
+
+    // Subsequent transaction logging must use the row's real owner.
+    ownerId = inventory.ownerId;
 
     const { quantity, costPrice } = data;
     const oldQuantity = inventory.quantity;
@@ -379,12 +426,17 @@ class InventoryService {
     return inventory;
   }
 
-  async delete(inventoryId, ownerId, userId) {
-    const inventory = await Inventory.findOne({ _id: inventoryId, ownerId });
-    
+  async delete(inventoryId, ownerId, userId, user = null) {
+    const scope = user?.role === ROLES.SUPER_OWNER
+      ? { _id: inventoryId }
+      : { _id: inventoryId, ownerId };
+    const inventory = await Inventory.findOne(scope);
+
     if (!inventory) {
       throw new Error('Stok tapılmadı');
     }
+
+    ownerId = inventory.ownerId;
 
     if (inventory.quantity > 0) {
       await InventoryTransaction.create({

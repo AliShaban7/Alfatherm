@@ -10,5 +10,7 @@ module.exports = {
   Debtor: require('./Debtor'),
   Creditor: require('./Creditor'),
   Vendor: require('./Vendor'),
-  Expense: require('./Expense')
+  Expense: require('./Expense'),
+  Salesperson: require('./Salesperson'),
+  Counter: require('./Counter')
 };

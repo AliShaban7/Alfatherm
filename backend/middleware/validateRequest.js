@@ -11,7 +11,7 @@ const validateRequest = (req, res, next) => {
 
     return res.status(400).json({
       success: false,
-      message: 'Doğrulama xətası',
+      message: extractedErrors[0]?.message || 'Doğrulama xətası',
       errors: extractedErrors
     });
   }

@@ -11,5 +11,6 @@ module.exports = {
   reportController: require('./report.controller'),
   branchController: require('./branch.controller'),
   warehouseController: require('./warehouse.controller'),
-  categoryController: require('./category.controller')
+  categoryController: require('./category.controller'),
+  salespersonController: require('./salesperson.controller')
 };

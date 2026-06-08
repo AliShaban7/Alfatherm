@@ -12,7 +12,16 @@ const api = axios.create({
 const cache = new Map();
 const CACHE_TTL = 30000; // 30 seconds
 
-const getCacheKey = (config) => `${config.method}:${config.url}:${JSON.stringify(config.params || {})}`;
+const getCacheKey = (config) => {
+  const token = localStorage.getItem('token') || '';
+  const sessionKey = token.slice(-20);
+  return `${sessionKey}:${config.method}:${config.url}:${JSON.stringify(config.params || {})}`;
+};
+
+const shouldSkipCache = (url = '') =>
+  url.includes('/auth/') ||
+  url.includes('/sales/warehouse-stock/') ||
+  /^\/sales\/[a-f0-9]{24}$/i.test(url);
 
 api.interceptors.request.use(
   (config) => {
@@ -21,8 +30,7 @@ api.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`;
     }
     
-    // Check cache for GET requests (skip for auth routes)
-    if (config.method === 'get' && !config.url.includes('/auth/')) {
+    if (config.method === 'get' && !shouldSkipCache(config.url)) {
       const cacheKey = getCacheKey(config);
       const cached = cache.get(cacheKey);
       if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
@@ -47,7 +55,7 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => {
     // Cache successful GET responses (skip auth routes)
-    if (response.config.method === 'get' && !response.config.url.includes('/auth/')) {
+    if (response.config.method === 'get' && !shouldSkipCache(response.config.url)) {
       const cacheKey = getCacheKey(response.config);
       cache.set(cacheKey, {
         data: response.data,
@@ -68,6 +76,16 @@ api.interceptors.response.use(
 
 // Export function to clear cache (call after mutations)
 export const clearApiCache = () => cache.clear();
+
+export const clearSalesCache = () => {
+  // Cache keys are `<sessionKey>:<method>:<url>:<params>`, so match the
+  // `:get:/sales` segment rather than the start of the key.
+  for (const key of cache.keys()) {
+    if (key.includes(':get:/sales')) {
+      cache.delete(key);
+    }
+  }
+};
 
 export const authAPI = {
   login: (data) => api.post('/auth/login', data),
@@ -98,9 +116,10 @@ export const inventoryAPI = {
 export const saleAPI = {
   getAll: (params) => api.get('/sales', { params }),
   getById: (id) => api.get(`/sales/${id}`),
-  create: (data) => api.post('/sales', data).then(r => { clearApiCache(); return r; }),
-  cancel: (id) => api.put(`/sales/${id}/cancel`).then(r => { clearApiCache(); return r; }),
-  getDailySummary: (params) => api.get('/sales/daily-summary', { params })
+  create: (data) => api.post('/sales', data).then((r) => { clearSalesCache(); return r; }),
+  cancel: (id) => api.put(`/sales/${id}/cancel`).then((r) => { clearSalesCache(); return r; }),
+  getDailySummary: (params) => api.get('/sales/daily-summary', { params }),
+  getWarehouseStock: (warehouseId) => api.get(`/sales/warehouse-stock/${warehouseId}`)
 };
 
 export const customerAPI = {
@@ -153,7 +172,16 @@ export const reportAPI = {
   getProductSalesReport: (params) => api.get('/reports/products', { params }),
   getInventoryReport: () => api.get('/reports/inventory'),
   getBranchReport: (params) => api.get('/reports/branches', { params }),
-  getProfitLossReport: (params) => api.get('/reports/profit-loss', { params })
+  getProfitLossReport: (params) => api.get('/reports/profit-loss', { params }),
+  getSalespersonReport: (params) => api.get('/reports/salespersons', { params })
+};
+
+export const salespersonAPI = {
+  getAll: (params) => api.get('/salespersons', { params }),
+  getById: (id) => api.get(`/salespersons/${id}`),
+  create: (data) => api.post('/salespersons', data).then((r) => { clearApiCache(); return r; }),
+  update: (id, data) => api.put(`/salespersons/${id}`, data).then((r) => { clearApiCache(); return r; }),
+  delete: (id) => api.delete(`/salespersons/${id}`).then((r) => { clearApiCache(); return r; })
 };
 
 export const branchAPI = {

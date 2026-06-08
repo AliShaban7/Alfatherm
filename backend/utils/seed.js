@@ -111,7 +111,7 @@ const seedDatabase = async () => {
         phone: '+994503333333',
         password: '123456',
         role: ROLES.EMPLOYEE,
-        ownerId: 'owner_zaur_001',  // General salesperson - can see all data
+        ownerId: 'owner_zaur_001',  // Shared salespeople — see all owners' data
         branchId: branches[1]._id
       },
       {
@@ -120,7 +120,7 @@ const seedDatabase = async () => {
         phone: '+994504444444',
         password: '123456',
         role: ROLES.EMPLOYEE,
-        ownerId: 'owner_zaur_001',  // General salesperson - can see all data
+        ownerId: 'owner_zaur_001',  // Shared salespeople — see all owners' data
         branchId: branches[2]._id
       }
     ]);

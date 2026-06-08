@@ -1,0 +1,6 @@
+{
+  "watch": ["*.js", "config", "controllers", "middleware", "models", "routes", "services", "validators"],
+  "ignore": ["node_modules", "utils/checkUsers.js", "utils/updateRoles.js"],
+  "ext": "js,json",
+  "delay": 500
+}
