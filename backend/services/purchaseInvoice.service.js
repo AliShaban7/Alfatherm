@@ -24,7 +24,7 @@ class PurchaseInvoiceService {
 
     const [warehouse, vendor] = await Promise.all([
       Warehouse.findById(warehouseId).lean(),
-      Vendor.findOne({ _id: vendorId, ownerId })
+      Vendor.findById(vendorId) // vendors are shared across owners
     ]);
 
     if (!warehouse) {
