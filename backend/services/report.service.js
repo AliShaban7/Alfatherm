@@ -12,6 +12,15 @@ const { ROLES } = require('../config/constants');
 // several owners' products. A SUPER_OWNER sees every owner's full figures.
 const isOwnerScoped = (user) => user?.role === ROLES.OWNER;
 
+// Inclusive end-of-day for a date-only filter. The report UI sends YYYY-MM-DD,
+// which parses to midnight; using it as `$lte` directly would exclude every sale
+// made later that same day (e.g. today's sales). Push it to 23:59:59.999.
+const endOfDay = (d) => {
+  const e = new Date(d);
+  e.setHours(23, 59, 59, 999);
+  return e;
+};
+
 class ReportService {
   // Leading $match for a sales pipeline. Owners are restricted to sales that
   // contain their goods; super owners match all owners.
@@ -137,7 +146,7 @@ class ReportService {
     if (startDate || endDate) {
       extra.date = {};
       if (startDate) extra.date.$gte = new Date(startDate);
-      if (endDate) extra.date.$lte = new Date(endDate);
+      if (endDate) extra.date.$lte = endOfDay(endDate);
     }
 
     let groupByField;
@@ -216,7 +225,7 @@ class ReportService {
     if (startDate || endDate) {
       extra.date = {};
       if (startDate) extra.date.$gte = new Date(startDate);
-      if (endDate) extra.date.$lte = new Date(endDate);
+      if (endDate) extra.date.$lte = endOfDay(endDate);
     }
 
     // Always unwind to the product line; for owners also drop other owners' lines.
@@ -317,7 +326,7 @@ class ReportService {
     if (startDate || endDate) {
       extra.date = {};
       if (startDate) extra.date.$gte = new Date(startDate);
-      if (endDate) extra.date.$lte = new Date(endDate);
+      if (endDate) extra.date.$lte = endOfDay(endDate);
     }
 
     const amount = this._amountExpr(user);
@@ -408,10 +417,14 @@ class ReportService {
 
     const dateFilter = {};
     if (startDate) dateFilter.$gte = new Date(startDate);
-    if (endDate) dateFilter.$lte = new Date(endDate);
+    if (endDate) dateFilter.$lte = endOfDay(endDate);
 
     const salesExtra = {};
-    const expenseMatchQuery = {};
+    // Exclude settlement expenses (e.g. usta commission payments): they're shown
+    // in the expenses list for visibility, but the cost they settle was already
+    // accrued (commission via the Commission ledger), so counting them here too
+    // would double-count.
+    const expenseMatchQuery = { isSettlement: { $ne: true } };
 
     if (branchId) {
       salesExtra.branchId = new mongoose.Types.ObjectId(branchId);

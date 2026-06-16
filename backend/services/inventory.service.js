@@ -303,6 +303,8 @@ class InventoryService {
     return {
       warehouse,
       items: inventory.map(inv => ({
+        _id: inv._id,             // needed so edit/delete target the right stock row
+        warehouseId: inv.warehouseId,
         product: inv.productId,
         quantity: inv.quantity,
         costPrice: canSeeCostPrice ? inv.costPrice : undefined,

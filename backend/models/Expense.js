@@ -20,11 +20,20 @@ const expenseSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  
+
+  // A cash settlement (e.g. paying down an usta's commission balance). It shows
+  // in the expenses list, but the Profit/Loss report excludes it, because the
+  // underlying cost was already accrued elsewhere (avoids double-counting).
+  isSettlement: {
+    type: Boolean,
+    default: false
+  },
+
   branchId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Branch',
-    required: true
+    // Not required for settlements (a payment isn't tied to a branch).
+    required: function() { return !this.isSettlement; }
   },
 
   // Set when this expense was auto-created from a sale (courier/packaging/etc.),

@@ -1,12 +1,14 @@
 const mongoose = require('mongoose');
 const Commission = require('../models/Commission');
+const Expense = require('../models/Expense');
 const { DEBT_STATUS } = require('../config/constants');
 
 class CommissionService {
   // Pay down an usta's outstanding commission for one owner. The payment is a
   // cash settlement that reduces the balance — it is NOT a P&L expense, since
   // the commission cost was already booked at the sale (accrual). Applies the
-  // amount across the owner's open commission records oldest-first (FIFO).
+  // amount across the owner's open commission records oldest-first (FIFO), and
+  // records a settlement Expense so the payment is visible in the expenses list.
   async payUsta(ustaId, ownerId, amount, paymentMethod, userId, note) {
     const pay = Number(amount);
     if (!ownerId) {
@@ -26,6 +28,9 @@ class CommissionService {
     if (pay > outstanding + 1e-6) {
       throw new Error(`Ödəniş qalıq balansdan (${outstanding.toFixed(2)} AZN) çox ola bilməz`);
     }
+
+    const ustaName = open[0]?.ustaName || 'Usta';
+    const branchId = open.find((c) => c.branchId)?.branchId; // optional on settlement
 
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -47,6 +52,22 @@ class CommissionService {
         await commission.save({ session }); // pre('save') recomputes remaining/status
         left -= applied;
       }
+
+      // Visible record of the payment in the expenses list. Flagged as a
+      // settlement so the P&L report excludes it (the commission cost was
+      // already accrued at the sale — see report.service).
+      await Expense.create([{
+        ownerId,
+        isSettlement: true,
+        branchId,
+        category: 'commission',
+        description: `Usta komissiya ödənişi - ${ustaName}`,
+        amount: pay,
+        date: new Date(),
+        paymentMethod: paymentMethod || 'cash',
+        note,
+        createdBy: userId
+      }], { session });
 
       await session.commitTransaction();
       return { paid: pay, remaining: outstanding - pay };

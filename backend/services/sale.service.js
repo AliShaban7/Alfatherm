@@ -332,7 +332,9 @@ class SaleService {
             createdBy: userId,
             date: createdSale.date
           }));
-        await Commission.create(commissionDocs, { session });
+        // ordered:true is required by Mongoose when create() gets an array +
+        // session (a mixed-owner sale produces one doc per owner).
+        await Commission.create(commissionDocs, { session, ordered: true });
       }
 
       // On-the-spot sale expenses: split each row by item share into per-owner
@@ -393,7 +395,9 @@ class SaleService {
           };
         });
 
-        await Debtor.create(debtorDocs, { session });
+        // ordered:true required for array create with a session (mixed-owner
+        // credit sale creates one debtor per owner).
+        await Debtor.create(debtorDocs, { session, ordered: true });
 
         await Customer.findByIdAndUpdate(customerId, {
           $inc: {
