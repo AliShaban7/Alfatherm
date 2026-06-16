@@ -99,7 +99,6 @@ const Salesmen = () => {
       <div className="page-header">
         <div>
           <h1 className="page-title">Satıcılar</h1>
-          <p className="page-subtitle">Satış bonusu üçün satıcıların izlənməsi</p>
         </div>
         {isOwner() && (
           <button className="btn btn-primary" onClick={() => { resetForm(); setShowModal(true); }}>

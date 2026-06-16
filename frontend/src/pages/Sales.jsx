@@ -20,7 +20,11 @@ const Sales = () => {
     endDate: ''
   });
   const [pagination, setPagination] = useState({ page: 1, pages: 1 });
+  const [detailSale, setDetailSale] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const { isOwner } = useAuth();
+
+  const SALE_EXPENSE_LABELS = { courier: 'Kuryer', packaging: 'Qablaşdırma', other: 'Digər' };
 
   useEffect(() => {
     const prepend = pendingPrepend.current;
@@ -79,6 +83,20 @@ const Sales = () => {
         ? 'badge badge-info'
         : 'badge badge-success';
     return <span className={className}>{label}</span>;
+  };
+
+  const openDetail = async (sale) => {
+    setDetailLoading(true);
+    setDetailSale({ _id: sale._id, saleNumber: sale.saleNumber, _loading: true });
+    try {
+      const response = await saleAPI.getById(sale._id);
+      setDetailSale(response.data?.data || null);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Satış məlumatını yükləmək mümkün olmadı');
+      setDetailSale(null);
+    } finally {
+      setDetailLoading(false);
+    }
   };
 
   const handlePrint = async (sale) => {
@@ -208,10 +226,12 @@ const Sales = () => {
                     return (
                     <tr
                       key={sale._id}
-                      style={voided ? { background: 'rgba(220, 38, 38, 0.07)' } : undefined}
+                      onClick={() => openDetail(sale)}
+                      style={{ cursor: 'pointer', ...(voided ? { background: 'rgba(220, 38, 38, 0.07)' } : {}) }}
+                      title="Detallar üçün klikləyin"
                     >
                       <td>
-                        <strong style={voided ? { textDecoration: 'line-through', color: 'var(--danger)' } : undefined}>
+                        <strong style={voided ? { textDecoration: 'line-through', color: 'var(--danger)' } : { color: 'var(--primary)' }}>
                           {sale.saleNumber}
                         </strong>
                         {voided && (
@@ -241,18 +261,25 @@ const Sales = () => {
                           {formatCurrency(sale.profit || 0)}
                         </td>
                       )}
-                      <td>
+                      <td onClick={(e) => e.stopPropagation()}>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          <button 
-                            className="btn btn-sm btn-primary" 
+                          <button
+                            className="btn btn-sm btn-secondary"
+                            onClick={() => openDetail(sale)}
+                            title="Detallar"
+                          >
+                            <FiEye />
+                          </button>
+                          <button
+                            className="btn btn-sm btn-primary"
                             onClick={() => handlePrint(sale)}
                             title="Çap et"
                           >
                             <FiPrinter />
                           </button>
                           {isOwner() && sale.status === 'completed' && (
-                            <button 
-                              className="btn btn-sm" 
+                            <button
+                              className="btn btn-sm"
                               style={{ color: 'var(--danger)' }}
                               onClick={() => handleDelete(sale._id)}
                               title="Ləğv et"
@@ -291,6 +318,124 @@ const Sales = () => {
           </>
         )}
       </div>
+
+      {detailSale && (
+        <div className="modal-overlay" onClick={() => setDetailSale(null)}>
+          <div className="modal" style={{ maxWidth: '640px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Satış {detailSale.saleNumber}</h3>
+              <button className="modal-close" onClick={() => setDetailSale(null)}>&times;</button>
+            </div>
+            <div className="modal-body">
+              {detailSale._loading || detailLoading ? (
+                <div className="loading"><div className="spinner"></div></div>
+              ) : (
+                <>
+                  {(detailSale.status === 'cancelled' || detailSale.status === 'returned') && (
+                    <div style={{ marginBottom: '0.75rem', color: 'var(--danger)', fontWeight: 600 }}>
+                      {detailSale.status === 'cancelled' ? 'Bu satış ləğv edilib' : 'Bu satış qaytarılıb'}
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem 1.5rem', marginBottom: '1rem', fontSize: '0.875rem' }}>
+                    <div><span style={{ color: 'var(--gray-500)' }}>Tarix:</span> <strong>{format(new Date(detailSale.date), 'dd.MM.yyyy HH:mm')}</strong></div>
+                    <div><span style={{ color: 'var(--gray-500)' }}>Müştəri:</span> <strong>{detailSale.customerId?.name || '-'}</strong></div>
+                    <div><span style={{ color: 'var(--gray-500)' }}>Anbar:</span> <strong>{detailSale.warehouseId?.name || detailSale.branchId?.name || '-'}</strong></div>
+                    {detailSale.salespersonName && <div><span style={{ color: 'var(--gray-500)' }}>Satıcı:</span> <strong>{detailSale.salespersonName}</strong></div>}
+                    <div><span style={{ color: 'var(--gray-500)' }}>Ödəniş:</span> <strong>{formatPaymentLabel(detailSale.paymentType, detailSale.paymentMethod)}</strong></div>
+                  </div>
+
+                  <table className="table" style={{ marginBottom: '1rem' }}>
+                    <thead>
+                      <tr><th>Məhsul</th><th>Miqdar</th><th>Qiymət</th><th>Cəm</th></tr>
+                    </thead>
+                    <tbody>
+                      {(detailSale.items || []).map((it, i) => (
+                        <tr key={i}>
+                          <td>{it.productName}</td>
+                          <td>{it.quantity}</td>
+                          <td>{formatCurrency(it.unitPrice)}</td>
+                          <td><strong>{formatCurrency(it.total)}</strong></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
+                    <span>Toplam</span><strong>{formatCurrency(detailSale.totalAmount)}</strong>
+                  </div>
+                  {detailSale.paymentType === 'credit' && (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
+                        <span>Ödənilib</span><span>{formatCurrency(detailSale.paidAmount)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', color: 'var(--danger)' }}>
+                        <span>Qalıq borc</span><strong>{formatCurrency(detailSale.remainingAmount)}</strong>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Cost/profit section — only present for owners (employees can't see it). */}
+                  {detailSale.totalCosts !== undefined && (
+                    <div style={{ marginTop: '1rem', borderTop: '1px solid var(--gray-200)', paddingTop: '0.75rem' }}>
+                      <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>Satış xərcləri</div>
+                      {detailSale.commission?.amount > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', fontSize: '0.875rem' }}>
+                          <span>Usta komissiyası{detailSale.commission.ustaName ? ` — ${detailSale.commission.ustaName}` : ''}</span>
+                          <span>{formatCurrency(detailSale.commission.amount)}</span>
+                        </div>
+                      )}
+                      {(detailSale.saleExpenses || []).map((e, i) => (
+                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', fontSize: '0.875rem' }}>
+                          <span>{SALE_EXPENSE_LABELS[e.category] || e.category}{e.note ? ` (${e.note})` : ''}</span>
+                          <span>{formatCurrency(e.amount)}</span>
+                        </div>
+                      ))}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontWeight: 600 }}>
+                        <span>Xərclər cəmi</span>
+                        <span>{formatCurrency(detailSale.totalCosts)}</span>
+                      </div>
+                      {(!detailSale.commission?.amount && !(detailSale.saleExpenses || []).length) && (
+                        <div style={{ fontSize: '0.8125rem', color: 'var(--gray-500)' }}>Bu satış üçün əlavə xərc yoxdur.</div>
+                      )}
+                    </div>
+                  )}
+
+                  {detailSale.profit !== undefined && (
+                    <div style={{ marginTop: '0.75rem', borderTop: '1px solid var(--gray-200)', paddingTop: '0.75rem' }}>
+                      {detailSale.totalCost !== undefined && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', fontSize: '0.875rem', color: 'var(--gray-600)' }}>
+                          <span>Maya dəyəri</span><span>{formatCurrency(detailSale.totalCost)}</span>
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
+                        <span>Ümumi mənfəət</span><span>{formatCurrency(detailSale.profit)}</span>
+                      </div>
+                      {detailSale.netProfit !== undefined && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontWeight: 700, color: 'var(--success)' }}>
+                          <span>Xalis mənfəət</span><span>{formatCurrency(detailSale.netProfit)}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {detailSale.note && (
+                    <div style={{ marginTop: '0.75rem', fontSize: '0.8125rem', color: 'var(--gray-600)' }}>
+                      <strong>Qeyd:</strong> {detailSale.note}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setDetailSale(null)}>Bağla</button>
+              <button className="btn btn-primary" onClick={() => handlePrint(detailSale)}>
+                <FiPrinter /> Çek
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { FiEye } from 'react-icons/fi';
+import { FiEye, FiPrinter } from 'react-icons/fi';
 import { purchaseInvoiceAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { format } from 'date-fns';
+import { printInvoice } from '../utils/invoicePrint';
 
 const STATUS = {
   paid: { label: 'Ödənilib', color: 'var(--success, #16a34a)' },
@@ -42,6 +43,26 @@ const Fakturalar = () => {
       setDetail(res.data.data);
     } catch (error) {
       toast.error('Faktura məlumatını yükləmək mümkün olmadı');
+    }
+  };
+
+  // Fetch the full invoice and open the print dialog (browser → Save as PDF).
+  const handlePrint = async (id) => {
+    let invoice;
+    try {
+      const res = await purchaseInvoiceAPI.getById(id);
+      invoice = res.data?.data;
+      if (!invoice) throw new Error('Boş cavab');
+    } catch (error) {
+      console.error('Faktura yüklənmədi:', error);
+      toast.error(error.response?.data?.message || 'Faktura məlumatını yükləmək mümkün olmadı');
+      return;
+    }
+    try {
+      printInvoice(invoice);
+    } catch (error) {
+      console.error('Faktura çap edilmədi:', error);
+      toast.warn('Faktura çap edilə bilmədi (brauzer popup-u bloklamış ola bilər)');
     }
   };
 
@@ -99,9 +120,14 @@ const Fakturalar = () => {
                         </td>
                         <td><span style={{ color: st.color, fontWeight: 600 }}>{st.label}</span></td>
                         <td>
-                          <button className="btn btn-sm btn-secondary" onClick={() => openDetail(inv._id)} title="Bax">
-                            <FiEye />
-                          </button>
+                          <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button className="btn btn-sm btn-secondary" onClick={() => openDetail(inv._id)} title="Bax">
+                              <FiEye />
+                            </button>
+                            <button className="btn btn-sm btn-primary" onClick={() => handlePrint(inv._id)} title="Çap / PDF">
+                              <FiPrinter />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -199,6 +225,19 @@ const Fakturalar = () => {
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setDetail(null)}>Bağla</button>
+              <button
+                className="btn btn-primary"
+                onClick={() => {
+                  try {
+                    printInvoice(detail);
+                  } catch (error) {
+                    console.error('Faktura çap edilmədi:', error);
+                    toast.warn('Faktura çap edilə bilmədi (brauzer popup-u bloklamış ola bilər)');
+                  }
+                }}
+              >
+                <FiPrinter /> Çap et / PDF
+              </button>
             </div>
           </div>
         </div>

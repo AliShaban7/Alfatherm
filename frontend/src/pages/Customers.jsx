@@ -108,7 +108,6 @@ const Customers = () => {
       <div className="page-header">
         <div>
           <h1 className="page-title">Müştərilər</h1>
-          <p className="page-subtitle">Müştəri idarəetməsi</p>
         </div>
         <button className="btn btn-primary" onClick={openCreateModal}>
           <FiPlus /> Yeni Müştəri

@@ -204,7 +204,6 @@ const Products = () => {
       <div className="page-header">
         <div>
           <h1 className="page-title">Məhsullar</h1>
-          <p className="page-subtitle">Məhsul kataloqu</p>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <button 

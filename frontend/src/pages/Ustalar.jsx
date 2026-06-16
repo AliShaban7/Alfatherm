@@ -92,7 +92,6 @@ const Ustalar = () => {
       <div className="page-header">
         <div>
           <h1 className="page-title">Ustalar</h1>
-          <p className="page-subtitle">Referans ustaları və komissiya balansları</p>
         </div>
         {isOwner() && (
           <button className="btn btn-primary" onClick={() => { resetForm(); setShowModal(true); }}>

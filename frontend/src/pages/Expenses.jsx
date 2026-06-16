@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FiPlus, FiEdit2, FiTrash2, FiFilter } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiFilter, FiUsers } from 'react-icons/fi';
 import { expenseAPI, branchAPI, ustaAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { format } from 'date-fns';
@@ -24,6 +24,7 @@ const Expenses = () => {
 
   // Usta commission balances + payment modal
   const [ustaBalances, setUstaBalances] = useState([]);
+  const [showBalances, setShowBalances] = useState(false);
   const [payModal, setPayModal] = useState({ open: false, usta: null, amount: '', paymentMethod: 'cash' });
 
   // Optional split of a new expense between owners (by percent or by amount).
@@ -235,53 +236,47 @@ const Expenses = () => {
     return expenses.reduce((sum, expense) => sum + expense.amount, 0);
   };
 
+  const outstandingUstas = ustaBalances.filter((b) => (b.remaining || 0) > 0);
+  const totalOutstanding = outstandingUstas.reduce((s, b) => s + (b.remaining || 0), 0);
+
   return (
     <div>
       <div className="page-header">
         <div>
           <h1 className="page-title">Xərclər</h1>
-          <p className="page-subtitle">Xərc idarəetməsi</p>
         </div>
         <button className="btn btn-primary" onClick={() => { resetForm(); setShowModal(true); }}>
           <FiPlus /> Yeni Xərc
         </button>
       </div>
 
-      {ustaBalances.some((b) => (b.remaining || 0) > 0) && (
-        <div className="card" style={{ marginBottom: '1.25rem' }}>
-          <h3 style={{ marginTop: 0 }}>Usta Komissiyaları</h3>
-          <p className="page-subtitle" style={{ marginTop: '-0.5rem' }}>
-            Ödənilməmiş referans komissiyaları. Ödəniş balansdan çıxılır (mənfəətə təsir etmir).
-          </p>
-          <div className="table-container">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Usta</th>
-                  <th>Qalıq balans</th>
-                  {canPayCommission && <th></th>}
-                </tr>
-              </thead>
-              <tbody>
-                {ustaBalances.filter((b) => (b.remaining || 0) > 0).map((b) => (
-                  <tr key={b.ustaId}>
-                    <td><strong>{b.ustaName}</strong></td>
-                    <td style={{ fontWeight: 600, color: 'var(--danger)' }}>{formatCurrency(b.remaining)}</td>
-                    {canPayCommission && (
-                      <td>
-                        <button
-                          className="btn btn-sm btn-primary"
-                          onClick={() => setPayModal({ open: true, usta: b, amount: '', paymentMethod: 'cash' })}
-                        >
-                          Ödə
-                        </button>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {canPayCommission && outstandingUstas.length > 0 && (
+        <div
+          className="card"
+          style={{
+            marginBottom: '1.25rem',
+            padding: '0.85rem 1.1rem',
+            borderLeft: '4px solid var(--warning)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem',
+            flexWrap: 'wrap'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+            <FiUsers style={{ color: 'var(--warning)', flexShrink: 0 }} />
+            <div>
+              <strong>Usta komissiyaları</strong>
+              <div style={{ fontSize: '0.8125rem', color: 'var(--gray-500)' }}>
+                {outstandingUstas.length} usta · ödənilməmiş{' '}
+                <strong style={{ color: 'var(--danger)' }}>{formatCurrency(totalOutstanding)}</strong>
+              </div>
+            </div>
           </div>
+          <button className="btn btn-sm btn-secondary" onClick={() => setShowBalances(true)}>
+            Ödənişlər
+          </button>
         </div>
       )}
 
@@ -602,6 +597,55 @@ const Expenses = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showBalances && (
+        <div className="modal-overlay" onClick={() => setShowBalances(false)}>
+          <div className="modal" style={{ maxWidth: '520px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Usta Komissiyaları</h3>
+              <button className="modal-close" onClick={() => setShowBalances(false)}>&times;</button>
+            </div>
+            <div className="modal-body">
+              <p className="page-subtitle" style={{ marginTop: 0 }}>
+                Ödənilməmiş referans komissiyaları. Ödəniş balansdan çıxılır və "Xərclər" siyahısında görünür (mənfəətə təsir etmir).
+              </p>
+              <div className="table-container">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Usta</th>
+                      <th>Qalıq balans</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {outstandingUstas.map((b) => (
+                      <tr key={b.ustaId}>
+                        <td><strong>{b.ustaName}</strong></td>
+                        <td style={{ fontWeight: 600, color: 'var(--danger)' }}>{formatCurrency(b.remaining)}</td>
+                        <td>
+                          <button
+                            className="btn btn-sm btn-primary"
+                            onClick={() => {
+                              setShowBalances(false);
+                              setPayModal({ open: true, usta: b, amount: '', paymentMethod: 'cash' });
+                            }}
+                          >
+                            Ödə
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowBalances(false)}>Bağla</button>
+            </div>
           </div>
         </div>
       )}
