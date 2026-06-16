@@ -42,7 +42,13 @@ const creditorSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'PurchaseOrder'
   },
-  
+
+  // Set when this debt came from a purchase invoice (Mal Girişi / faktura).
+  purchaseInvoiceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'PurchaseInvoice'
+  },
+
   description: {
     type: String,
     required: [true, 'Təsvir daxil edin']

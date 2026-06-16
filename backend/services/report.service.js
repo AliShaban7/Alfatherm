@@ -5,6 +5,7 @@ const Debtor = require('../models/Debtor');
 const Creditor = require('../models/Creditor');
 const Expense = require('../models/Expense');
 const Product = require('../models/Product');
+const Commission = require('../models/Commission');
 const { ROLES } = require('../config/constants');
 
 // A founder (OWNER) sees only the goods they own, even inside a sale that mixes
@@ -430,10 +431,18 @@ class ReportService {
       ];
     }
 
+    // Referral commission is accrued per owner in its own ledger (not the Expense
+    // collection), so add it as a cost line here. Owner-scoped to ownerId; same
+    // date/branch window. (Courier/packaging already come through Expense.)
+    const commissionMatchQuery = {};
+    if (branchId) commissionMatchQuery.branchId = new mongoose.Types.ObjectId(branchId);
+    if (startDate || endDate) commissionMatchQuery.date = dateFilter;
+    if (isOwnerScoped(user)) commissionMatchQuery.ownerId = user.ownerId;
+
     const amount = this._amountExpr(user);
     const cost = this._costExpr(user);
 
-    const [salesData, expenseData] = await Promise.all([
+    const [salesData, expenseData, commissionData] = await Promise.all([
       Sale.aggregate([
         { $match: this._salesMatch(user, salesExtra) },
         ...this._ownerItemStages(user),
@@ -448,11 +457,22 @@ class ReportService {
       Expense.aggregate([
         { $match: expenseMatchQuery },
         { $group: { _id: '$category', amount: { $sum: '$amount' } } }
+      ]),
+      Commission.aggregate([
+        { $match: commissionMatchQuery },
+        { $group: { _id: null, amount: { $sum: '$amount' } } }
       ])
     ]);
 
     const salesAgg = salesData[0] || { totalRevenue: 0, totalCost: 0 };
     const grossProfit = salesAgg.totalRevenue - salesAgg.totalCost;
+
+    // Merge accrued commission into the expense breakdown as its own line.
+    const commissionAccrued = commissionData[0]?.amount || 0;
+    if (commissionAccrued > 0) {
+      expenseData.push({ _id: 'commission', amount: commissionAccrued });
+    }
+
     const totalExpenses = expenseData.reduce((sum, exp) => sum + exp.amount, 0);
     const netProfit = grossProfit - totalExpenses;
 

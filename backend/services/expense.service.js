@@ -3,13 +3,46 @@ const Expense = require('../models/Expense');
 
 class ExpenseService {
   async create(expenseData, ownerId, userId) {
-    const expense = await Expense.create({
-      ...expenseData,
+    const { ownerSplit, isShared, ...rest } = expenseData;
+
+    // Split between owners: create one expense per owner with their share, so
+    // each owner's Profit/Loss reflects exactly their portion (not the full
+    // amount, which the old `isShared` flag double-counted across owners).
+    if (Array.isArray(ownerSplit) && ownerSplit.length > 0) {
+      const shares = ownerSplit
+        .map((s) => ({ ownerId: s.ownerId, amount: Math.round((Number(s.amount) || 0) * 100) / 100 }))
+        .filter((s) => s.ownerId && s.amount > 0);
+
+      if (shares.length === 0) {
+        throw new Error('Bölüşdürmə məbləğlərini daxil edin');
+      }
+
+      const splitTotal = shares.reduce((sum, s) => sum + s.amount, 0);
+      const expenseTotal = Number(rest.amount) || 0;
+      if (Math.abs(splitTotal - expenseTotal) > 0.01) {
+        throw new Error('Bölüşdürmə cəmi xərc məbləğinə bərabər olmalıdır');
+      }
+
+      const docs = shares.map((s) => ({
+        ...rest,
+        amount: s.amount,
+        ownerId: s.ownerId,
+        isShared: false,
+        createdBy: userId
+      }));
+
+      // Array form still triggers the per-doc pre('save') (expenseNumber). Fine
+      // here — manual expenses are low volume (a couple of docs at a time).
+      return Expense.create(docs);
+    }
+
+    // Single-owner expense (no split): keep the legacy behavior.
+    return Expense.create({
+      ...rest,
       ownerId,
+      isShared: !!isShared,
       createdBy: userId
     });
-
-    return expense;
   }
 
   async getAll(ownerId, filters = {}) {

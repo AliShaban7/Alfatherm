@@ -1,9 +1,11 @@
 const debtorService = require('../services/debtor.service');
 
+// req.ownerFilter (from ownerDataIsolation): {} for the director (sees all
+// owners' debtors), { ownerId } for an owner (only their own).
 exports.getAll = async (req, res, next) => {
   try {
-    const result = await debtorService.getAll(req.ownerId, req.query);
-    
+    const result = await debtorService.getAll(req.ownerFilter, req.query);
+
     res.status(200).json({
       success: true,
       ...result
@@ -15,8 +17,8 @@ exports.getAll = async (req, res, next) => {
 
 exports.getById = async (req, res, next) => {
   try {
-    const debtor = await debtorService.getById(req.params.id, req.ownerId);
-    
+    const debtor = await debtorService.getById(req.params.id, req.ownerFilter);
+
     res.status(200).json({
       success: true,
       data: debtor
@@ -28,8 +30,8 @@ exports.getById = async (req, res, next) => {
 
 exports.addPayment = async (req, res, next) => {
   try {
-    const debtor = await debtorService.addPayment(req.params.id, req.body, req.ownerId, req.user._id);
-    
+    const debtor = await debtorService.addPayment(req.params.id, req.body, req.ownerFilter, req.user._id);
+
     res.status(200).json({
       success: true,
       data: debtor
@@ -41,8 +43,8 @@ exports.addPayment = async (req, res, next) => {
 
 exports.getSummary = async (req, res, next) => {
   try {
-    const summary = await debtorService.getSummary(req.ownerId, req.query.branchId);
-    
+    const summary = await debtorService.getSummary(req.ownerFilter, req.query.branchId);
+
     res.status(200).json({
       success: true,
       data: summary
@@ -54,8 +56,8 @@ exports.getSummary = async (req, res, next) => {
 
 exports.getOverdue = async (req, res, next) => {
   try {
-    const overdue = await debtorService.getOverdue(req.ownerId);
-    
+    const overdue = await debtorService.getOverdue(req.ownerFilter);
+
     res.status(200).json({
       success: true,
       data: overdue

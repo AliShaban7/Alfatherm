@@ -8,8 +8,18 @@ const Warehouse = require('../models/Warehouse');
 const Inventory = require('../models/Inventory');
 const InventoryTransaction = require('../models/InventoryTransaction');
 const Salesperson = require('../models/Salesperson');
-const inventoryService = require('./inventory.service');
-const { PAYMENT_TYPES, ROLES, WAREHOUSE_TYPES, INVENTORY_TRANSACTION_TYPES } = require('../config/constants');
+const Usta = require('../models/Usta');
+const Commission = require('../models/Commission');
+const Expense = require('../models/Expense');
+const { PAYMENT_TYPES, ROLES, WAREHOUSE_TYPES, INVENTORY_TRANSACTION_TYPES, SALE_EXPENSE_CATEGORIES } = require('../config/constants');
+
+// Azerbaijani labels for sale-expense categories, used in the auto-generated
+// Expense description (e.g. "Kuryer - Satış SAL-...").
+const SALE_EXPENSE_LABELS = {
+  courier: 'Kuryer',
+  packaging: 'Qablaşdırma',
+  other: 'Digər xərc'
+};
 
 class SaleService {
   canAccessSale(sale, user) {
@@ -23,18 +33,43 @@ class SaleService {
     return Array.isArray(sale.ownerIds) && sale.ownerIds.includes(user.ownerId);
   }
 
+  // Split `amount` across owners in proportion to each owner's share of the
+  // sale subtotal, giving the last owner the rounding remainder so the parts
+  // sum back to `amount` exactly. Returns [{ ownerId, amount }]. (Same technique
+  // already used for credit-debtor allocation.)
+  _splitAmountByOwner(amount, ownerSubtotals, totalAmount) {
+    const ownerIds = [...ownerSubtotals.keys()];
+    let allocated = 0;
+    return ownerIds.map((ownerId, index) => {
+      const share = index === ownerIds.length - 1
+        ? Math.round((amount - allocated) * 100) / 100
+        : Math.round((amount * ownerSubtotals.get(ownerId) / totalAmount) * 100) / 100;
+      allocated += share;
+      return { ownerId, amount: share };
+    });
+  }
+
   // Reduce a sale to a single owner's slice: keep only their line items and
   // recompute the monetary totals so their books reflect just their goods.
   sliceSaleForOwner(sale, ownerId) {
     const items = (sale.items || []).filter((item) => item.productOwnerId === ownerId);
     if (items.length === 0 || items.length === (sale.items || []).length) {
-      // Nothing to slice (single-owner sale, or no item detail loaded)
+      // Nothing to slice (single-owner sale, or no item detail loaded).
+      // netProfit/totalCosts are already this owner's figures.
       return sale;
     }
 
     const subtotal = items.reduce((sum, i) => sum + (i.total || 0), 0);
     const totalCost = items.reduce((sum, i) => sum + (i.costPrice || 0) * i.quantity, 0);
     const totalDiscount = items.reduce((sum, i) => sum + (i.discount || 0), 0);
+    const profit = subtotal - totalCost;
+
+    // This owner bears a share of the sale's extra costs (commission + expenses)
+    // proportional to their slice of the whole-sale subtotal.
+    const saleSubtotal = sale.subtotal || subtotal;
+    const ownerCostShare = saleSubtotal > 0
+      ? Math.round((sale.totalCosts || 0) * (subtotal / saleSubtotal) * 100) / 100
+      : 0;
 
     return {
       ...sale,
@@ -43,13 +78,18 @@ class SaleService {
       totalAmount: subtotal,
       totalDiscount,
       totalCost,
-      profit: subtotal - totalCost
+      profit,
+      totalCosts: ownerCostShare,
+      netProfit: profit - ownerCostShare
     };
   }
 
   async create(saleData, user) {
-    const { customerId, warehouseId, salespersonId, items, paymentType, paymentMethod, isOfficial, paidAmount, note } = saleData;
+    const { customerId, warehouseId, salespersonId, items, paymentType, paymentMethod, isOfficial, paidAmount, note, commission, saleExpenses } = saleData;
     const userId = user._id;
+
+    // Referral commission requested? (usta resolved in the parallel fetch below.)
+    const commissionAmount = commission && Number(commission.amount) > 0 ? Number(commission.amount) : 0;
 
     // Employees and the super owner (director over both owners) may sell any
     // owner's products; a founder is limited to their own products.
@@ -65,12 +105,15 @@ class SaleService {
     // Fetch everything the sale needs in parallel. Each DB query is a network
     // round-trip; doing the independent reads at once (instead of one after
     // another) is the biggest win for checkout latency.
-    const [customer, salesperson, warehouse, products, inventories] = await Promise.all([
+    const [customer, salesperson, warehouse, products, inventories, usta] = await Promise.all([
       Customer.findOne({ _id: customerId, isActive: true }).lean(),
       Salesperson.findOne({ _id: salespersonId, isActive: true }).lean(),
       Warehouse.findById(warehouseId).lean(),
       Product.find(productQuery).lean(),
-      Inventory.find({ productId: { $in: productIds }, warehouseId }).lean()
+      Inventory.find({ productId: { $in: productIds }, warehouseId }).lean(),
+      commissionAmount > 0 && commission.ustaId
+        ? Usta.findById(commission.ustaId).lean()
+        : Promise.resolve(null)
     ]);
 
     // Customers are a shared pool, so any seller can transact with any customer.
@@ -83,6 +126,23 @@ class SaleService {
     }
     if (!warehouse) {
       throw new Error('Anbar tapılmadı');
+    }
+
+    // Validate the referral commission (usta required when an amount is given).
+    if (commissionAmount > 0) {
+      if (!usta || usta.isActive === false) {
+        throw new Error('Usta tapılmadı');
+      }
+    }
+
+    // Normalize the on-the-spot sale expenses (drop empty rows; reject bad ones).
+    const normalizedExpenses = (Array.isArray(saleExpenses) ? saleExpenses : [])
+      .map((e) => ({ category: e.category, amount: Number(e.amount), note: e.note }))
+      .filter((e) => e.amount > 0);
+    for (const e of normalizedExpenses) {
+      if (!SALE_EXPENSE_CATEGORIES.includes(e.category)) {
+        throw new Error('Düzgün xərc kateqoriyası seçin');
+      }
     }
 
     // The sale is anchored to the customer's owner for the receipt/customer link;
@@ -156,8 +216,30 @@ class SaleService {
     const totalAmount = subtotal;
     const profit = totalAmount - totalCost;
 
+    // Up-front payment on a credit sale: coerce to a number (the body sends a
+    // string) and clamp to [0, totalAmount] so a stray negative or over-payment
+    // can't produce a negative/!=expected remaining.
+    const paidAmountNum = Math.min(Math.max(Number(paidAmount) || 0, 0), totalAmount);
+
+    // Extra sale costs (referral commission + on-the-spot expenses). These are
+    // accrued/expensed now and reduce net profit; commission also becomes a
+    // payable to the usta. All are split between owners by item share.
+    const expensesTotal = normalizedExpenses.reduce((sum, e) => sum + e.amount, 0);
+    const totalCosts = commissionAmount + expensesTotal;
+    const netProfit = profit - totalCosts;
+
     // Distinct owners whose goods are in this sale (for per-owner reporting/isolation)
     const ownerIds = [...new Set(processedItems.map((item) => item.productOwnerId))];
+
+    // Each owner's share of the sale subtotal — drives both the credit-debt split
+    // and the cost (commission/expense) split below.
+    const ownerSubtotals = new Map();
+    for (const item of processedItems) {
+      ownerSubtotals.set(
+        item.productOwnerId,
+        (ownerSubtotals.get(item.productOwnerId) || 0) + item.total
+      );
+    }
 
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -181,10 +263,16 @@ class SaleService {
         totalAmount,
         totalCost,
         profit,
+        commission: commissionAmount > 0
+          ? { ustaId: usta._id, ustaName: usta.name, amount: commissionAmount }
+          : { amount: 0 },
+        saleExpenses: normalizedExpenses,
+        totalCosts,
+        netProfit,
         paymentType,
         paymentMethod: paymentType === PAYMENT_TYPES.PREPAID ? paymentMethod : undefined,
-        paidAmount: paymentType === PAYMENT_TYPES.CREDIT ? (paidAmount || 0) : totalAmount,
-        remainingAmount: paymentType === PAYMENT_TYPES.CREDIT ? (totalAmount - (paidAmount || 0)) : 0,
+        paidAmount: paymentType === PAYMENT_TYPES.CREDIT ? paidAmountNum : totalAmount,
+        remainingAmount: paymentType === PAYMENT_TYPES.CREDIT ? (totalAmount - paidAmountNum) : 0,
         isOfficial,
         note
       }], { session });
@@ -228,20 +316,60 @@ class SaleService {
         { session }
       );
 
+      // Referral commission: one payable per owner, split by item share. Accrues
+      // to the usta's balance and is drawn down later in the Expenses panel.
+      if (commissionAmount > 0) {
+        const commissionDocs = this._splitAmountByOwner(commissionAmount, ownerSubtotals, totalAmount)
+          .filter((s) => s.amount > 0)
+          .map((s) => ({
+            ustaId: usta._id,
+            ustaName: usta.name,
+            ownerId: s.ownerId,
+            saleId: createdSale._id,
+            branchId,
+            amount: s.amount,
+            remainingAmount: s.amount,
+            createdBy: userId,
+            date: createdSale.date
+          }));
+        await Commission.create(commissionDocs, { session });
+      }
+
+      // On-the-spot sale expenses: split each row by item share into per-owner
+      // Expense docs so the existing Profit/Loss report nets them per owner.
+      // insertMany (not .create) skips the racy expenseNumber pre('save') hook;
+      // expenseNumber is sparse, so leaving it unset is fine.
+      if (normalizedExpenses.length > 0) {
+        const expenseDocs = [];
+        for (const e of normalizedExpenses) {
+          const label = SALE_EXPENSE_LABELS[e.category] || e.category;
+          for (const s of this._splitAmountByOwner(e.amount, ownerSubtotals, totalAmount)) {
+            if (s.amount <= 0) continue;
+            expenseDocs.push({
+              ownerId: s.ownerId,
+              isShared: false,
+              branchId,
+              saleId: createdSale._id,
+              category: e.category,
+              description: `${label} - Satış ${saleNumber}`,
+              amount: s.amount,
+              date: createdSale.date,
+              paymentMethod: 'cash',
+              createdBy: userId
+            });
+          }
+        }
+        if (expenseDocs.length > 0) {
+          await Expense.insertMany(expenseDocs, { session });
+        }
+      }
+
       if (paymentType === PAYMENT_TYPES.CREDIT) {
-        const totalPaid = paidAmount || 0;
+        const totalPaid = paidAmountNum;
 
         // Each owner is owed the value of their own goods. Allocate the buyer's
         // upfront payment across owners in proportion to their share of the sale
         // so every founder's receivable reflects only what they're actually owed.
-        const ownerSubtotals = new Map();
-        for (const item of processedItems) {
-          ownerSubtotals.set(
-            item.productOwnerId,
-            (ownerSubtotals.get(item.productOwnerId) || 0) + item.total
-          );
-        }
-
         const debtorOwnerIds = [...ownerSubtotals.keys()];
         let allocatedPaid = 0;
 
@@ -342,7 +470,7 @@ class SaleService {
     // keep items to recompute their slice of mixed sales.
     const unset = ['__v'];
     if (!isOwnerScoped) unset.push('items');
-    if (!canSeeCostPrice) unset.push('totalCost', 'profit');
+    if (!canSeeCostPrice) unset.push('totalCost', 'profit', 'netProfit', 'totalCosts', 'commission', 'saleExpenses');
 
     // Single round-trip: page the sales, THEN join the few referenced docs (so
     // the $lookups only touch `limit` rows, not the whole collection). This
@@ -394,7 +522,7 @@ class SaleService {
   async getById(id, ownerFilter = {}, canSeeCostPrice = false, user = null) {
     let selectFields = '-__v';
     if (!canSeeCostPrice) {
-      selectFields += ' -totalCost -profit -items.costPrice';
+      selectFields += ' -totalCost -profit -netProfit -totalCosts -commission -saleExpenses -items.costPrice';
     }
 
     const sale = await Sale.findById(id)
@@ -446,17 +574,38 @@ class SaleService {
     try {
       // 1) Return each line's stock to the warehouse it was sold from, attributed
       //    to that line's product owner (mixed-owner sales restore correctly).
-      for (const item of sale.items) {
-        await inventoryService.restoreForSale(
-          item.productId,
-          sale.warehouseId,
-          item.quantity,
-          sale._id,
-          item.productOwnerId || sale.ownerId,
-          userId,
-          session
-        );
-      }
+      //    Done as one bulk increment + one transaction insert instead of the
+      //    previous ~3-round-trips-per-item loop. `upsert` recreates any stock
+      //    row that was deleted between the sale and the cancel.
+      const warehouseId = sale.warehouseId;
+      const now = new Date();
+
+      const restoreOps = sale.items.map((item) => ({
+        updateOne: {
+          filter: {
+            productId: item.productId,
+            warehouseId,
+            ownerId: item.productOwnerId || sale.ownerId
+          },
+          update: { $inc: { quantity: item.quantity }, $set: { lastUpdated: now } },
+          upsert: true
+        }
+      }));
+      await Inventory.bulkWrite(restoreOps, { session });
+
+      await InventoryTransaction.insertMany(
+        sale.items.map((item) => ({
+          type: INVENTORY_TRANSACTION_TYPES.RETURN,
+          productId: item.productId,
+          ownerId: item.productOwnerId || sale.ownerId,
+          toWarehouseId: warehouseId,
+          quantity: item.quantity,
+          saleId: sale._id,
+          note: 'Satış ləğvi - stok bərpası',
+          createdBy: userId
+        })),
+        { session }
+      );
 
       // 2) Reverse any receivables this sale created (credit sales may have one
       //    debtor per owner). Reduce the customer's outstanding debt by what is
@@ -466,6 +615,12 @@ class SaleService {
       if (debtors.length) {
         await Debtor.deleteMany({ saleId: sale._id }, { session });
       }
+
+      // 2b) Reverse the sale's extra costs: delete its split commission payables
+      //     and on-the-spot expense docs. (A commission already partly paid is a
+      //     rare edge case; deletion still reverses the accrual.)
+      await Commission.deleteMany({ saleId: sale._id }, { session });
+      await Expense.deleteMany({ saleId: sale._id }, { session });
 
       // 3) Roll back the customer's running totals.
       await Customer.findByIdAndUpdate(sale.customerId, {

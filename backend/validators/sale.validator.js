@@ -1,5 +1,5 @@
 const { body, param } = require('express-validator');
-const { PAYMENT_TYPES, PAYMENT_METHODS } = require('../config/constants');
+const { PAYMENT_TYPES, PAYMENT_METHODS, SALE_EXPENSE_CATEGORIES } = require('../config/constants');
 
 exports.createSaleValidation = [
   body('customerId')
@@ -44,7 +44,24 @@ exports.createSaleValidation = [
   body('paidAmount')
     .optional({ values: 'falsy' })
     .isFloat({ min: 0 }).withMessage('Ödənilən məbləğ mənfi ola bilməz'),
-  
+
+  // Referral commission (optional). If an amount is given, an usta is required.
+  body('commission').optional().isObject().withMessage('Düzgün komissiya məlumatı daxil edin'),
+  body('commission.amount')
+    .optional({ values: 'falsy' })
+    .isFloat({ gt: 0 }).withMessage('Komissiya məbləği müsbət olmalıdır'),
+  body('commission.ustaId')
+    .if((value, { req }) => Number(req.body?.commission?.amount) > 0)
+    .notEmpty().withMessage('Usta seçin')
+    .isMongoId().withMessage('Düzgün usta ID daxil edin'),
+
+  // On-the-spot sale expenses (optional rows; each must be complete + non-zero).
+  body('saleExpenses').optional().isArray().withMessage('Düzgün xərc siyahısı daxil edin'),
+  body('saleExpenses.*.category')
+    .isIn(SALE_EXPENSE_CATEGORIES).withMessage('Düzgün xərc kateqoriyası seçin'),
+  body('saleExpenses.*.amount')
+    .isFloat({ gt: 0 }).withMessage('Xərc məbləği müsbət olmalıdır'),
+
   body('note').optional().trim()
 ];
 

@@ -62,11 +62,16 @@ const userSchema = new mongoose.Schema({
 userSchema.index({ ownerId: 1, email: 1 });
 
 userSchema.pre('save', async function(next) {
+  // Only hash when the password actually changed. The previous version was
+  // missing this `return`, so any save that didn't touch the password (e.g.
+  // toggling isActive, updating lastLogin) fell through and re-hashed the
+  // already-hashed value — corrupting the credential and locking the user out.
   if (!this.isModified('password')) {
-    next();
+    return next();
   }
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
+  next();
 });
 
 userSchema.methods.matchPassword = async function(enteredPassword) {

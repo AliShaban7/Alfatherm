@@ -12,5 +12,8 @@ module.exports = {
   Vendor: require('./Vendor'),
   Expense: require('./Expense'),
   Salesperson: require('./Salesperson'),
+  Usta: require('./Usta'),
+  Commission: require('./Commission'),
+  PurchaseInvoice: require('./PurchaseInvoice'),
   Counter: require('./Counter')
 };

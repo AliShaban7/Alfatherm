@@ -2,8 +2,61 @@ const Product = require('../models/Product');
 const Inventory = require('../models/Inventory');
 const { ROLES } = require('../config/constants');
 
+const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// Trim the descriptive free-text fields so " Bosch" and "Bosch" don't become
+// distinct values. (The UI feeds these from a pick-or-add-new list, so the
+// values should already be canonical; this is a safety net.)
+const CANON_FIELDS = ['brand', 'manufacturer', 'country', 'color'];
+const trimDescriptiveFields = (data) => {
+  for (const f of CANON_FIELDS) {
+    if (typeof data[f] === 'string') data[f] = data[f].trim();
+  }
+};
+
 class ProductService {
+  // Block creating a second product with the same name for an owner (case-
+  // insensitive), so a typo/duplicate can't fragment stats. `excludeId` skips
+  // the product itself on update.
+  async assertUniqueName(name, ownerId, excludeId = null) {
+    const trimmed = String(name || '').trim();
+    if (!trimmed) {
+      throw new Error('Məhsul adı daxil edin');
+    }
+    const query = {
+      ownerId,
+      isActive: true,
+      name: { $regex: `^${escapeRegex(trimmed)}$`, $options: 'i' }
+    };
+    if (excludeId) query._id = { $ne: excludeId };
+    if (await Product.findOne(query)) {
+      throw new Error('Bu adda məhsul artıq mövcuddur');
+    }
+    return trimmed;
+  }
+
+  // Distinct existing values for the pick-or-add-new fields, so the New Product
+  // form can offer them. Global (these attributes aren't owner-sensitive) and
+  // de-duplicated case-insensitively to one canonical spelling each.
+  async getFieldOptions() {
+    const result = {};
+    for (const field of CANON_FIELDS) {
+      const values = await Product.distinct(field, { [field]: { $nin: [null, ''] } });
+      const seen = new Map(); // lowercase -> first spelling
+      for (const v of values) {
+        const key = String(v).trim().toLowerCase();
+        if (key && !seen.has(key)) seen.set(key, String(v).trim());
+      }
+      result[field] = [...seen.values()].sort((a, b) => a.localeCompare(b, 'az'));
+    }
+    return result; // { brand: [...], manufacturer: [...], country: [...], color: [...] }
+  }
+
   async create(productData, ownerId, userId) {
+    // Reject duplicate names up front; normalize the descriptive fields.
+    productData.name = await this.assertUniqueName(productData.name, ownerId);
+    trimDescriptiveFields(productData);
+
     // Auto-generate SKU if not provided
     let sku = productData.sku;
     if (!sku) {
@@ -125,6 +178,12 @@ class ProductService {
     if (!existingProduct) {
       throw new Error('Məhsul tapılmadı');
     }
+
+    // Renaming must not collide with another product of the same owner.
+    if (updateData.name !== undefined) {
+      updateData.name = await this.assertUniqueName(updateData.name, existingProduct.ownerId, id);
+    }
+    trimDescriptiveFields(updateData);
 
     // Get the final values (use updateData if provided, otherwise use existing)
     const finalMinPrice = updateData.minPrice !== undefined ? updateData.minPrice : existingProduct.minPrice;

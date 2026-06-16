@@ -1,6 +1,24 @@
 const mongoose = require('mongoose');
 const Counter = require('./Counter');
-const { PAYMENT_TYPES, PAYMENT_METHODS } = require('../config/constants');
+const { PAYMENT_TYPES, PAYMENT_METHODS, SALE_EXPENSE_CATEGORIES } = require('../config/constants');
+
+// A sale-related expense paid on the spot (courier, packaging, etc.). Split
+// between owners by item share into Expense docs; this is the as-entered record.
+const saleExpenseSchema = new mongoose.Schema({
+  category: {
+    type: String,
+    enum: SALE_EXPENSE_CATEGORIES,
+    required: true
+  },
+  amount: {
+    type: Number,
+    required: true,
+    min: [0, 'Məbləğ mənfi ola bilməz']
+  },
+  note: {
+    type: String
+  }
+}, { _id: false });
 
 const saleItemSchema = new mongoose.Schema({
   productId: {
@@ -150,7 +168,38 @@ const saleSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
-  
+
+  // Referral commission for the usta who sent the customer. One usta per sale.
+  // Accrued as a payable (split per owner into Commission records); the amount
+  // is also part of totalCosts so net profit reflects it at sale time.
+  commission: {
+    ustaId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Usta'
+    },
+    ustaName: { type: String },
+    amount: { type: Number, default: 0, min: 0 }
+  },
+
+  // On-the-spot sale expenses (courier, packaging, ...). Split per owner into
+  // Expense docs at sale time; kept here as the as-entered breakdown.
+  saleExpenses: {
+    type: [saleExpenseSchema],
+    default: []
+  },
+
+  // commission.amount + Σ saleExpenses.amount
+  totalCosts: {
+    type: Number,
+    default: 0
+  },
+
+  // profit (gross goods margin) − totalCosts. Whole-sale net; an owner viewing a
+  // mixed sale sees their sliced net (see sale.service.sliceSaleForOwner).
+  netProfit: {
+    type: Number
+  },
+
   // Payment
   paymentType: {
     type: String,

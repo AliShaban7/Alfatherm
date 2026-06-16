@@ -291,8 +291,14 @@ class InventoryService {
 
     const inventory = await Inventory.find(query)
       .populate('productId', selectProductFields)
-      .sort({ 'productId.name': 1 })
       .lean();
+
+    // Sort by product name in memory: a `.sort({ 'productId.name': 1 })` runs on
+    // the DB before populate resolves, so it has no effect — the list came back
+    // unsorted. localeCompare keeps Azerbaijani letters ordered correctly.
+    inventory.sort((a, b) =>
+      (a.productId?.name || '').localeCompare(b.productId?.name || '', 'az')
+    );
 
     return {
       warehouse,

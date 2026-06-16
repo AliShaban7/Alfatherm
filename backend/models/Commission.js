@@ -1,6 +1,9 @@
 const mongoose = require('mongoose');
 const { DEBT_STATUS } = require('../config/constants');
 
+// Payment against an usta's referral commission. Same shape as the Creditor
+// payment history — a cash settlement, not a P&L expense (the commission cost
+// was already booked at the sale, see report.service commission accrual).
 const paymentHistorySchema = new mongoose.Schema({
   amount: {
     type: Number,
@@ -16,77 +19,76 @@ const paymentHistorySchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   },
-  receivedBy: {
+  paidBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
   note: String
 }, { _id: true, timestamps: true });
 
-const debtorSchema = new mongoose.Schema({
-  // Owner isolation
+/**
+ * One owner's share of the referral commission owed to an usta for a single
+ * sale. Mirrors the Creditor (accounts-payable) pattern: it accrues at sale
+ * time (one record per owner whose goods were in the sale, split by item share)
+ * and is drawn down by payments in the Expenses panel. The usta's outstanding
+ * balance is the sum of `remainingAmount` across their open records.
+ */
+const commissionSchema = new mongoose.Schema({
+  ustaId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Usta',
+    required: true
+  },
+  // Snapshot so reports/balances stay correct if the usta is later renamed.
+  ustaName: {
+    type: String
+  },
+
+  // The owner who owes this slice of the commission.
   ownerId: {
     type: String,
     required: true,
     index: true
   },
-  
-  customerId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Customer',
-    required: true
-  },
-  
+
   saleId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Sale',
     required: true
   },
-  
   branchId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Branch',
-    required: true
+    ref: 'Branch'
   },
-  
-  totalAmount: {
+
+  amount: {
     type: Number,
     required: true,
     min: 0
   },
-  
   paidAmount: {
     type: Number,
     default: 0,
     min: 0
   },
-  
   remainingAmount: {
     type: Number,
     required: true,
     min: 0
   },
-  
   status: {
     type: String,
     enum: Object.values(DEBT_STATUS),
     default: DEBT_STATUS.PENDING
   },
-  
-  dueDate: {
-    type: Date
-  },
-  
+
   paymentHistory: [paymentHistorySchema],
-  
-  note: String,
-  
+
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
-  
-  createdAt: {
+  date: {
     type: Date,
     default: Date.now
   }
@@ -94,22 +96,22 @@ const debtorSchema = new mongoose.Schema({
   timestamps: true
 });
 
-debtorSchema.index({ ownerId: 1, status: 1 });
-debtorSchema.index({ ownerId: 1, customerId: 1 });
-debtorSchema.index({ ownerId: 1, dueDate: 1 });
+commissionSchema.index({ ustaId: 1, ownerId: 1, status: 1 });
+commissionSchema.index({ ownerId: 1, status: 1 });
+commissionSchema.index({ saleId: 1 });
 
-debtorSchema.pre('save', function(next) {
-  this.remainingAmount = this.totalAmount - this.paidAmount;
-  
+commissionSchema.pre('save', function(next) {
+  this.remainingAmount = this.amount - this.paidAmount;
+
   if (this.remainingAmount <= 0) {
     this.status = DEBT_STATUS.PAID;
   } else if (this.paidAmount > 0) {
     this.status = DEBT_STATUS.PARTIAL;
-  } else if (this.dueDate && new Date() > this.dueDate) {
-    this.status = DEBT_STATUS.OVERDUE;
+  } else {
+    this.status = DEBT_STATUS.PENDING;
   }
-  
+
   next();
 });
 
-module.exports = mongoose.model('Debtor', debtorSchema);
+module.exports = mongoose.model('Commission', commissionSchema);

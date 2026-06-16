@@ -26,7 +26,15 @@ const expenseSchema = new mongoose.Schema({
     ref: 'Branch',
     required: true
   },
-  
+
+  // Set when this expense was auto-created from a sale (courier/packaging/etc.),
+  // so it can be found and removed if that sale is cancelled.
+  saleId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Sale',
+    index: true
+  },
+
   category: {
     type: String,
     enum: Object.values(EXPENSE_CATEGORIES),

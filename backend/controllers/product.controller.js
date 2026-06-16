@@ -22,11 +22,21 @@ exports.create = async (req, res, next) => {
 exports.getAll = async (req, res, next) => {
   try {
     const result = await productService.getAll(req.ownerId, req.query, req.canSeeCostPrice, req.user);
-    
+
     res.status(200).json({
       success: true,
       ...result
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Distinct existing values for the New Product pick-or-add-new fields.
+exports.getOptions = async (req, res, next) => {
+  try {
+    const options = await productService.getFieldOptions();
+    res.status(200).json({ success: true, data: options });
   } catch (error) {
     next(error);
   }

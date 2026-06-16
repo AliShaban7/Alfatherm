@@ -79,6 +79,10 @@ const customerSchema = new mongoose.Schema({
 
 customerSchema.index({ ownerId: 1, name: 'text' });
 customerSchema.index({ ownerId: 1, type: 1 });
+// Customer list / New Sale dropdown query by isActive and sort by name. The
+// `text` index above can't serve a plain sort, so this lets the sorted page come
+// straight from the index rather than a full scan + in-memory sort.
+customerSchema.index({ isActive: 1, name: 1 });
 
 customerSchema.index(
   { phone: 1 },

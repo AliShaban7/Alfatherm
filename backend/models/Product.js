@@ -103,6 +103,12 @@ const productSchema = new mongoose.Schema({
 productSchema.index({ ownerId: 1, sku: 1 });
 productSchema.index({ ownerId: 1, name: 'text' });
 productSchema.index({ ownerId: 1, category: 1 });
+// The product list (and the New Sale screen, which loads up to 1000 products)
+// filters by isActive [+ ownerId] and sorts by name. A `text` index can't serve
+// an ordinary sort, so these plain compound indexes let Mongo return the page
+// straight from the index instead of scanning + sorting in memory.
+productSchema.index({ ownerId: 1, isActive: 1, name: 1 });
+productSchema.index({ isActive: 1, name: 1 }); // employee / super-owner (no ownerId filter)
 
 productSchema.methods.toEmployeeJSON = function() {
   const obj = this.toObject();

@@ -5,7 +5,14 @@ const { DEBT_STATUS } = require('../config/constants');
 
 class CreditorService {
   async create(creditorData, ownerId, userId) {
-    const { vendorId, description, totalAmount, dueDate, note } = creditorData;
+    const { vendorId, description, dueDate, note } = creditorData;
+
+    // Coerce the debt amount (body sends a string) and require it to be positive,
+    // so a string/negative can't corrupt the creditor or vendor.totalDebt.
+    const totalAmount = Math.round((Number(creditorData.totalAmount) || 0) * 100) / 100;
+    if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
+      throw new Error('Düzgün borc məbləği daxil edin');
+    }
 
     const vendor = await Vendor.findOne({ _id: vendorId, ownerId });
     if (!vendor) {
@@ -45,8 +52,8 @@ class CreditorService {
     }
   }
 
-  async getAll(ownerId, filters = {}) {
-    const query = { ownerId };
+  async getAll(ownerFilter = {}, filters = {}) {
+    const query = { ...ownerFilter };
 
     if (filters.status) {
       query.status = filters.status;
@@ -81,8 +88,8 @@ class CreditorService {
     };
   }
 
-  async getById(id, ownerId) {
-    const creditor = await Creditor.findOne({ _id: id, ownerId })
+  async getById(id, ownerFilter = {}) {
+    const creditor = await Creditor.findOne({ _id: id, ...ownerFilter })
       .populate('vendorId', 'name companyName phone address')
       .populate('paymentHistory.paidBy', 'name');
 
@@ -93,10 +100,18 @@ class CreditorService {
     return creditor;
   }
 
-  async addPayment(id, paymentData, ownerId, userId) {
-    const { amount, paymentMethod, note } = paymentData;
+  async addPayment(id, paymentData, ownerFilter = {}, userId) {
+    const { paymentMethod, note } = paymentData;
 
-    const creditor = await Creditor.findOne({ _id: id, ownerId });
+    // Coerce the amount to a number. The request body delivers it as a string,
+    // and `paidAmount += "20"` would string-concatenate (30 + "20" => "3020"),
+    // blowing up the total and driving remainingAmount negative. Round to cents.
+    const amount = Math.round((Number(paymentData.amount) || 0) * 100) / 100;
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error('Düzgün ödəniş məbləği daxil edin');
+    }
+
+    const creditor = await Creditor.findOne({ _id: id, ...ownerFilter });
     if (!creditor) {
       throw new Error('Kreditor tapılmadı');
     }
@@ -105,7 +120,7 @@ class CreditorService {
       throw new Error('Bu borc artıq ödənilib');
     }
 
-    if (amount > creditor.remainingAmount) {
+    if (amount > creditor.remainingAmount + 1e-6) {
       throw new Error('Ödəniş məbləği qalıq borcdan çox ola bilməz');
     }
 
@@ -141,9 +156,9 @@ class CreditorService {
     }
   }
 
-  async getSummary(ownerId) {
+  async getSummary(ownerFilter = {}) {
     const summary = await Creditor.aggregate([
-      { $match: { ownerId } },
+      { $match: { ...ownerFilter } },
       {
         $group: {
           _id: '$status',
@@ -156,7 +171,7 @@ class CreditorService {
     ]);
 
     const totalSummary = await Creditor.aggregate([
-      { $match: { ownerId } },
+      { $match: { ...ownerFilter } },
       {
         $group: {
           _id: null,
