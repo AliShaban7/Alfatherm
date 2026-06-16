@@ -46,6 +46,10 @@ const inventoryTransactionSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'PurchaseOrder'
   },
+  purchaseInvoiceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'PurchaseInvoice'
+  },
   vendorId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Vendor'

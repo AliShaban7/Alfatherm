@@ -13,10 +13,12 @@ exports.create = async (req, res, next) => {
   }
 };
 
+// req.ownerFilter (from ownerDataIsolation): {} for the director (sees all
+// owners' creditors), { ownerId } for an owner (only their own).
 exports.getAll = async (req, res, next) => {
   try {
-    const result = await creditorService.getAll(req.ownerId, req.query);
-    
+    const result = await creditorService.getAll(req.ownerFilter, req.query);
+
     res.status(200).json({
       success: true,
       ...result
@@ -28,8 +30,8 @@ exports.getAll = async (req, res, next) => {
 
 exports.getById = async (req, res, next) => {
   try {
-    const creditor = await creditorService.getById(req.params.id, req.ownerId);
-    
+    const creditor = await creditorService.getById(req.params.id, req.ownerFilter);
+
     res.status(200).json({
       success: true,
       data: creditor
@@ -41,8 +43,8 @@ exports.getById = async (req, res, next) => {
 
 exports.addPayment = async (req, res, next) => {
   try {
-    const creditor = await creditorService.addPayment(req.params.id, req.body, req.ownerId, req.user._id);
-    
+    const creditor = await creditorService.addPayment(req.params.id, req.body, req.ownerFilter, req.user._id);
+
     res.status(200).json({
       success: true,
       data: creditor
@@ -54,8 +56,8 @@ exports.addPayment = async (req, res, next) => {
 
 exports.getSummary = async (req, res, next) => {
   try {
-    const summary = await creditorService.getSummary(req.ownerId);
-    
+    const summary = await creditorService.getSummary(req.ownerFilter);
+
     res.status(200).json({
       success: true,
       data: summary

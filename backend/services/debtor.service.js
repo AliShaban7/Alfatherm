@@ -4,8 +4,8 @@ const Customer = require('../models/Customer');
 const { DEBT_STATUS } = require('../config/constants');
 
 class DebtorService {
-  async getAll(ownerId, filters = {}) {
-    const query = { ownerId };
+  async getAll(ownerFilter = {}, filters = {}) {
+    const query = { ...ownerFilter };
 
     if (filters.status) {
       query.status = filters.status;
@@ -50,8 +50,8 @@ class DebtorService {
     };
   }
 
-  async getById(id, ownerId) {
-    const debtor = await Debtor.findOne({ _id: id, ownerId })
+  async getById(id, ownerFilter = {}) {
+    const debtor = await Debtor.findOne({ _id: id, ...ownerFilter })
       .populate('customerId', 'name phone type address')
       .populate('branchId', 'name code')
       .populate('saleId')
@@ -64,10 +64,18 @@ class DebtorService {
     return debtor;
   }
 
-  async addPayment(id, paymentData, ownerId, userId) {
-    const { amount, paymentMethod, note } = paymentData;
+  async addPayment(id, paymentData, ownerFilter = {}, userId) {
+    const { paymentMethod, note } = paymentData;
 
-    const debtor = await Debtor.findOne({ _id: id, ownerId });
+    // Coerce the amount to a number. The request body delivers it as a string,
+    // and `paidAmount += "20"` would string-concatenate (30 + "20" => "3020"),
+    // blowing up the total and driving remainingAmount negative. Round to cents.
+    const amount = Math.round((Number(paymentData.amount) || 0) * 100) / 100;
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error('Düzgün ödəniş məbləği daxil edin');
+    }
+
+    const debtor = await Debtor.findOne({ _id: id, ...ownerFilter });
     if (!debtor) {
       throw new Error('Debitor tapılmadı');
     }
@@ -76,7 +84,7 @@ class DebtorService {
       throw new Error('Bu borc artıq ödənilib');
     }
 
-    if (amount > debtor.remainingAmount) {
+    if (amount > debtor.remainingAmount + 1e-6) {
       throw new Error('Ödəniş məbləği qalıq borcdan çox ola bilməz');
     }
 
@@ -112,8 +120,8 @@ class DebtorService {
     }
   }
 
-  async getSummary(ownerId, branchId = null) {
-    const matchQuery = { ownerId };
+  async getSummary(ownerFilter = {}, branchId = null) {
+    const matchQuery = { ...ownerFilter };
     if (branchId) {
       matchQuery.branchId = new mongoose.Types.ObjectId(branchId);
     }
@@ -155,12 +163,12 @@ class DebtorService {
     };
   }
 
-  async getOverdue(ownerId) {
+  async getOverdue(ownerFilter = {}) {
     const now = new Date();
-    
+
     await Debtor.updateMany(
       {
-        ownerId,
+        ...ownerFilter,
         status: { $in: [DEBT_STATUS.PENDING, DEBT_STATUS.PARTIAL] },
         dueDate: { $lt: now }
       },
@@ -168,7 +176,7 @@ class DebtorService {
     );
 
     return await Debtor.find({
-      ownerId,
+      ...ownerFilter,
       status: DEBT_STATUS.OVERDUE
     })
       .populate('customerId', 'name phone')

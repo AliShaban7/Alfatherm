@@ -81,11 +81,23 @@ exports.superOwnerOnly = (req, res, next) => {
 };
 
 exports.ownerDataIsolation = (req, res, next) => {
-  // Admin (SUPER_OWNER) and salespeople see all owners' data
-  if (req.user.role === ROLES.EMPLOYEE || req.user.role === ROLES.SUPER_OWNER) {
+  // Admin and salespeople work across all owner accounts; founders see only their own
+  if (req.user.role === ROLES.SUPER_OWNER || req.user.role === ROLES.EMPLOYEE) {
     req.ownerFilter = {};
   } else {
     req.ownerFilter = { ownerId: req.ownerId };
+  }
+  next();
+};
+
+// Sales can mix products from several owners, so a founder must match any sale
+// that contains their goods (ownerIds is a multikey array), not just sales whose
+// primary ownerId is theirs. Use this on sale list/detail routes.
+exports.ownerSaleIsolation = (req, res, next) => {
+  if (req.user.role === ROLES.SUPER_OWNER || req.user.role === ROLES.EMPLOYEE) {
+    req.ownerFilter = {};
+  } else {
+    req.ownerFilter = { ownerIds: req.ownerId };
   }
   next();
 };

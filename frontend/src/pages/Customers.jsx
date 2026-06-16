@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { FiPlus, FiSearch, FiEdit2, FiTrash2, FiEye } from 'react-icons/fi';
+import { FiPlus, FiSearch, FiEdit2, FiTrash2 } from 'react-icons/fi';
 import { customerAPI } from '../services/api';
 import { toast } from 'react-toastify';
+import CustomerFormModal, { EMPTY_CUSTOMER_FORM } from '../components/customers/CustomerFormModal';
 
 const CUSTOMER_TYPES = [
   { value: 'physical', label: 'Fiziki şəxs' },
@@ -16,18 +17,8 @@ const Customers = () => {
   const [typeFilter, setTypeFilter] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
-
-  const [formData, setFormData] = useState({
-    type: 'physical',
-    name: '',
-    brandName: '',
-    voen: '',
-    address: '',
-    contactPerson: '',
-    phone: '',
-    email: '',
-    note: ''
-  });
+  const [modalInitialValues, setModalInitialValues] = useState(EMPTY_CUSTOMER_FORM);
+  const [modalLoading, setModalLoading] = useState(false);
 
   useEffect(() => {
     fetchCustomers();
@@ -50,14 +41,14 @@ const Customers = () => {
     fetchCustomers();
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleModalSubmit = async (payload) => {
+    setModalLoading(true);
     try {
       if (editingCustomer) {
-        await customerAPI.update(editingCustomer._id, formData);
+        await customerAPI.update(editingCustomer._id, payload);
         toast.success('Müştəri yeniləndi');
       } else {
-        await customerAPI.create(formData);
+        await customerAPI.create(payload);
         toast.success('Müştəri əlavə edildi');
       }
       setShowModal(false);
@@ -65,21 +56,22 @@ const Customers = () => {
       fetchCustomers();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Xəta baş verdi');
+    } finally {
+      setModalLoading(false);
     }
   };
 
   const handleEdit = (customer) => {
     setEditingCustomer(customer);
-    setFormData({
-      type: customer.type,
-      name: customer.name,
+    setModalInitialValues({
+      type: customer.type || 'physical',
+      name: customer.name || '',
       brandName: customer.brandName || '',
       voen: customer.voen || '',
+      fin: customer.fin || '',
       address: customer.address || '',
       contactPerson: customer.contactPerson || '',
-      phone: customer.phone,
-      email: customer.email || '',
-      note: customer.note || ''
+      phone: customer.phone || ''
     });
     setShowModal(true);
   };
@@ -97,17 +89,12 @@ const Customers = () => {
 
   const resetForm = () => {
     setEditingCustomer(null);
-    setFormData({
-      type: 'physical',
-      name: '',
-      brandName: '',
-      voen: '',
-      address: '',
-      contactPerson: '',
-      phone: '',
-      email: '',
-      note: ''
-    });
+    setModalInitialValues(EMPTY_CUSTOMER_FORM);
+  };
+
+  const openCreateModal = () => {
+    resetForm();
+    setShowModal(true);
   };
 
   const formatCurrency = (amount) => {
@@ -121,9 +108,8 @@ const Customers = () => {
       <div className="page-header">
         <div>
           <h1 className="page-title">Müştərilər</h1>
-          <p className="page-subtitle">Müştəri idarəetməsi</p>
         </div>
-        <button className="btn btn-primary" onClick={() => { resetForm(); setShowModal(true); }}>
+        <button className="btn btn-primary" onClick={openCreateModal}>
           <FiPlus /> Yeni Müştəri
         </button>
       </div>
@@ -221,124 +207,16 @@ const Customers = () => {
         )}
       </div>
 
-      {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal" style={{ maxWidth: '600px' }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 className="modal-title">{editingCustomer ? 'Müştərini Redaktə Et' : 'Yeni Müştəri'}</h3>
-              <button className="modal-close" onClick={() => setShowModal(false)}>&times;</button>
-            </div>
-            <form onSubmit={handleSubmit}>
-              <div className="modal-body">
-                <div className="form-group">
-                  <label className="form-label">Müştəri Tipi *</label>
-                  <select
-                    className="form-control"
-                    value={formData.type}
-                    onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                    required
-                  >
-                    {CUSTOMER_TYPES.map(type => (
-                      <option key={type.value} value={type.value}>{type.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label">Ad *</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Telefon *</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      required
-                    />
-                  </div>
-                </div>
-                {formData.type === 'legal' && (
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label className="form-label">Şirkət Adı</label>
-                      <input
-                        type="text"
-                        className="form-control"
-                        value={formData.brandName}
-                        onChange={(e) => setFormData({ ...formData, brandName: e.target.value })}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">VÖEN *</label>
-                      <input
-                        type="text"
-                        className="form-control"
-                        value={formData.voen}
-                        onChange={(e) => setFormData({ ...formData, voen: e.target.value })}
-                        required={formData.type === 'legal'}
-                      />
-                    </div>
-                  </div>
-                )}
-                <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label">Əlaqədar Şəxs</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={formData.contactPerson}
-                      onChange={(e) => setFormData({ ...formData, contactPerson: e.target.value })}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Email</label>
-                    <input
-                      type="email"
-                      className="form-control"
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    />
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Ünvan</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    value={formData.address}
-                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Qeyd</label>
-                  <textarea
-                    className="form-control"
-                    value={formData.note}
-                    onChange={(e) => setFormData({ ...formData, note: e.target.value })}
-                    rows="2"
-                  ></textarea>
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>
-                  İmtina
-                </button>
-                <button type="submit" className="btn btn-primary">
-                  {editingCustomer ? 'Yenilə' : 'Əlavə et'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <CustomerFormModal
+        open={showModal}
+        onClose={() => { setShowModal(false); resetForm(); }}
+        onSubmit={handleModalSubmit}
+        loading={modalLoading}
+        initialValues={modalInitialValues}
+        title={editingCustomer ? 'Müştərini Redaktə Et' : 'Yeni Müştəri'}
+        submitLabel={editingCustomer ? 'Yenilə' : 'Yarat'}
+        loadingLabel={editingCustomer ? 'Yenilənir...' : 'Yaradılır...'}
+      />
     </div>
   );
 };

@@ -10,5 +10,10 @@ module.exports = {
   Debtor: require('./Debtor'),
   Creditor: require('./Creditor'),
   Vendor: require('./Vendor'),
-  Expense: require('./Expense')
+  Expense: require('./Expense'),
+  Salesperson: require('./Salesperson'),
+  Usta: require('./Usta'),
+  Commission: require('./Commission'),
+  PurchaseInvoice: require('./PurchaseInvoice'),
+  Counter: require('./Counter')
 };

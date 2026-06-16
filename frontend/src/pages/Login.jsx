@@ -21,9 +21,9 @@ const Login = () => {
 
     setLoading(true);
     try {
-      await login(email, password);
+      const userData = await login(email, password);
       toast.success('Uğurla daxil oldunuz');
-      navigate('/');
+      navigate(userData.role === 'EMPLOYEE' ? '/sales' : '/');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Giriş uğursuz oldu');
     } finally {

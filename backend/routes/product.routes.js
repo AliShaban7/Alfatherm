@@ -19,6 +19,9 @@ router.post(
 
 router.get('/', productController.getAll);
 
+// Static path before '/:id' so it isn't captured as an id.
+router.get('/options', productController.getOptions);
+
 router.get('/:id', productController.getById);
 
 router.get('/:id/stock', productController.getWithStock);

@@ -22,7 +22,7 @@ exports.create = async (req, res, next) => {
 exports.getAll = async (req, res, next) => {
   try {
     const result = await productService.getAll(req.ownerId, req.query, req.canSeeCostPrice, req.user);
-    
+
     res.status(200).json({
       success: true,
       ...result
@@ -32,9 +32,19 @@ exports.getAll = async (req, res, next) => {
   }
 };
 
+// Distinct existing values for the New Product pick-or-add-new fields.
+exports.getOptions = async (req, res, next) => {
+  try {
+    const options = await productService.getFieldOptions();
+    res.status(200).json({ success: true, data: options });
+  } catch (error) {
+    next(error);
+  }
+};
+
 exports.getById = async (req, res, next) => {
   try {
-    const product = await productService.getById(req.params.id, req.ownerId, req.canSeeCostPrice);
+    const product = await productService.getById(req.params.id, req.ownerId, req.canSeeCostPrice, req.user);
     
     res.status(200).json({
       success: true,
@@ -47,7 +57,7 @@ exports.getById = async (req, res, next) => {
 
 exports.getWithStock = async (req, res, next) => {
   try {
-    const product = await productService.getProductWithStock(req.params.id, req.ownerId, req.canSeeCostPrice);
+    const product = await productService.getProductWithStock(req.params.id, req.ownerId, req.canSeeCostPrice, req.user);
     
     res.status(200).json({
       success: true,
@@ -60,7 +70,7 @@ exports.getWithStock = async (req, res, next) => {
 
 exports.update = async (req, res, next) => {
   try {
-    const product = await productService.update(req.params.id, req.body, req.ownerId, req.canSeeCostPrice);
+    const product = await productService.update(req.params.id, req.body, req.ownerId, req.canSeeCostPrice, req.user);
     
     res.status(200).json({
       success: true,
@@ -73,7 +83,7 @@ exports.update = async (req, res, next) => {
 
 exports.delete = async (req, res, next) => {
   try {
-    const result = await productService.delete(req.params.id, req.ownerId);
+    const result = await productService.delete(req.params.id, req.ownerId, req.user);
     
     res.status(200).json({
       success: true,

@@ -1,49 +1,86 @@
-import { useState, useEffect } from 'react';
-import { FiDownload, FiTrendingUp, FiTrendingDown, FiFileText } from 'react-icons/fi';
-import { reportAPI } from '../services/api';
+import { useState, useEffect, useCallback } from 'react';
+import {
+  FiDownload, FiTrendingUp, FiTrendingDown, FiShoppingCart, FiBox,
+  FiPackage, FiUserCheck, FiPieChart, FiChevronRight, FiDollarSign,
+  FiCreditCard, FiHash, FiX
+} from 'react-icons/fi';
+import { reportAPI, saleAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
+import { formatPaymentLabel } from '../utils/payment';
+import { expenseCategoryLabel } from '../utils/labels';
 import * as XLSX from 'xlsx';
+import './Reports.css';
+
+const pad2 = (n) => String(n).padStart(2, '0');
+const iso = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+const TABS = [
+  { key: 'sales', label: 'Satış Hesabatı', icon: FiShoppingCart },
+  { key: 'products', label: 'Məhsul Satışı', icon: FiBox },
+  { key: 'inventory', label: 'Anbar Hesabatı', icon: FiPackage },
+  { key: 'salespersons', label: 'Satıcı Hesabatı', icon: FiUserCheck },
+  { key: 'profit', label: 'Mənfəət / Zərər', icon: FiPieChart, ownerOnly: true }
+];
+
+const KpiCard = ({ icon: Icon, color, value, label }) => (
+  <div className="kpi-card">
+    <div className={`kpi-icon ${color}`}><Icon /></div>
+    <div className="kpi-body">
+      <div className="kpi-value" title={value}>{value}</div>
+      <div className="kpi-label">{label}</div>
+    </div>
+  </div>
+);
 
 const Reports = () => {
+  const { isOwner } = useAuth();
   const [activeTab, setActiveTab] = useState('sales');
   const [loading, setLoading] = useState(true);
   const [salesReport, setSalesReport] = useState(null);
   const [productReport, setProductReport] = useState(null);
   const [inventoryReport, setInventoryReport] = useState(null);
+  const [salespersonReport, setSalespersonReport] = useState(null);
   const [profitLossReport, setProfitLossReport] = useState(null);
+  const [activePreset, setActivePreset] = useState('thisMonth');
+
+  const today = new Date();
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const [filters, setFilters] = useState({
-    startDate: '',
-    endDate: '',
+    startDate: iso(monthStart),
+    endDate: iso(today),
     groupBy: 'day'
   });
-  const { isOwner } = useAuth();
 
-  useEffect(() => {
-    fetchReport();
-  }, [activeTab]);
+  // Daily drill-down modal
+  const [daily, setDaily] = useState(null); // { label, row, sales, loading }
 
-  const fetchReport = async () => {
+  const formatCurrency = (amount) =>
+    new Intl.NumberFormat('az-AZ', { minimumFractionDigits: 2 }).format(amount || 0) + ' AZN';
+  const formatNumber = (n) => new Intl.NumberFormat('az-AZ').format(n || 0);
+
+  const fetchReport = useCallback(async (f, tab) => {
+    const params = f || filters;
+    const which = tab || activeTab;
     try {
       setLoading(true);
-      switch (activeTab) {
+      switch (which) {
         case 'sales':
-          const salesRes = await reportAPI.getSalesReport(filters);
-          setSalesReport(salesRes.data.data);
+          setSalesReport((await reportAPI.getSalesReport(params)).data.data);
           break;
         case 'products':
-          const productRes = await reportAPI.getProductSalesReport(filters);
-          setProductReport(productRes.data.data);
+          setProductReport((await reportAPI.getProductSalesReport(params)).data.data);
           break;
         case 'inventory':
-          const invRes = await reportAPI.getInventoryReport();
-          setInventoryReport(invRes.data.data);
+          setInventoryReport((await reportAPI.getInventoryReport()).data.data);
+          break;
+        case 'salespersons':
+          setSalespersonReport((await reportAPI.getSalespersonReport(params)).data.data);
           break;
         case 'profit':
-          if (isOwner()) {
-            const profitRes = await reportAPI.getProfitLossReport(filters);
-            setProfitLossReport(profitRes.data.data);
-          }
+          if (isOwner()) setProfitLossReport((await reportAPI.getProfitLossReport(params)).data.data);
+          break;
+        default:
           break;
       }
     } catch (error) {
@@ -51,649 +88,560 @@ const Reports = () => {
     } finally {
       setLoading(false);
     }
+  }, [filters, activeTab, isOwner]);
+
+  useEffect(() => {
+    fetchReport(filters, activeTab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  const applyPreset = (key) => {
+    const now = new Date();
+    let start;
+    let end = new Date();
+    switch (key) {
+      case 'today': start = new Date(); break;
+      case 'yesterday':
+        start = new Date(now); start.setDate(now.getDate() - 1);
+        end = new Date(start); break;
+      case 'thisWeek': {
+        start = new Date(now);
+        const dow = (now.getDay() + 6) % 7; // Monday-based
+        start.setDate(now.getDate() - dow);
+        break;
+      }
+      case 'thisMonth': start = new Date(now.getFullYear(), now.getMonth(), 1); break;
+      case 'lastMonth':
+        start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        end = new Date(now.getFullYear(), now.getMonth(), 0);
+        break;
+      default: start = new Date(now.getFullYear(), now.getMonth(), 1);
+    }
+    const nf = { ...filters, startDate: iso(start), endDate: iso(end) };
+    setActivePreset(key);
+    setFilters(nf);
+    fetchReport(nf, activeTab);
   };
 
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('az-AZ', {
-      minimumFractionDigits: 2
-    }).format(amount || 0) + ' AZN';
+  const periodLabel = (id) =>
+    id.day ? `${pad2(id.day)}.${pad2(id.month)}.${id.year}`
+      : id.week != null ? `${id.year} – ${id.week}-ci həftə`
+        : `${pad2(id.month)}.${id.year}`;
+
+  // Only day/month rows can drill into a concrete date range.
+  const periodRange = (id) => {
+    if (id.day) {
+      const d = iso(new Date(id.year, id.month - 1, id.day));
+      return { start: d, end: d };
+    }
+    if (id.week == null && id.month) {
+      return {
+        start: iso(new Date(id.year, id.month - 1, 1)),
+        end: iso(new Date(id.year, id.month, 0))
+      };
+    }
+    return null;
   };
 
+  const openDaily = async (row) => {
+    const range = periodRange(row._id);
+    if (!range) return;
+    setDaily({ label: periodLabel(row._id), row, sales: [], loading: true });
+    try {
+      const res = await saleAPI.getAll({
+        startDate: range.start,
+        endDate: range.end,
+        status: 'completed',
+        limit: 200
+      });
+      setDaily((d) => d && { ...d, sales: res.data.sales || [], loading: false });
+    } catch {
+      setDaily((d) => d && { ...d, loading: false });
+      toast.error('Günün satışlarını yükləmək mümkün olmadı');
+    }
+  };
+
+  /* ---------------- Excel exports ---------------- */
   const exportToExcel = (data, filename) => {
     try {
       const ws = XLSX.utils.json_to_sheet(data);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Data');
-      XLSX.writeFile(wb, `${filename}_${new Date().toISOString().split('T')[0]}.xlsx`);
+      XLSX.writeFile(wb, `${filename}_${iso(new Date())}.xlsx`);
       toast.success('Excel faylı yükləndi');
-    } catch (error) {
+    } catch {
       toast.error('Excel faylını yaratmaq mümkün olmadı');
     }
   };
 
-  const exportSalesReport = () => {
-    if (!salesReport?.data?.length) {
-      toast.warning('Eksport üçün məlumat yoxdur');
-      return;
+  const handleExport = () => {
+    if (activeTab === 'sales') {
+      if (!salesReport?.data?.length) return toast.warning('Eksport üçün məlumat yoxdur');
+      exportToExcel(salesReport.data.map((r) => ({
+        'Dövr': periodLabel(r._id),
+        'Satış Sayı': r.salesCount,
+        'Məbləğ (AZN)': r.totalAmount,
+        'Nağd (AZN)': r.cashSales,
+        'POS (AZN)': r.posSales,
+        'Bank (AZN)': r.bankSales,
+        'Nisyə (AZN)': r.creditSales,
+        ...(isOwner() && { 'Qazanc (AZN)': r.totalProfit })
+      })), 'satis_hesabati');
+    } else if (activeTab === 'products') {
+      if (!productReport?.length) return toast.warning('Eksport üçün məlumat yoxdur');
+      exportToExcel(productReport.map((r, i) => ({
+        '#': i + 1, 'Məhsul': r.productName, 'Miqdar': r.totalQuantity,
+        'Məbləğ (AZN)': r.totalAmount, ...(isOwner() && { 'Qazanc (AZN)': r.totalProfit })
+      })), 'mehsul_satis');
+    } else if (activeTab === 'inventory') {
+      if (!inventoryReport?.byWarehouse?.length) return toast.warning('Eksport üçün məlumat yoxdur');
+      exportToExcel(inventoryReport.byWarehouse.map((r) => ({
+        'Anbar': r.warehouseName, 'Tip': r.warehouseType === 'main' ? 'Əsas' : 'Filial',
+        'Məhsul Sayı': r.totalProducts, 'Miqdar': r.totalQuantity,
+        ...(isOwner() && r.totalValue && { 'Maya (AZN)': r.totalValue }),
+        'Satış Dəyəri (AZN)': r.totalRetailValue
+      })), 'anbar_hesabati');
+    } else if (activeTab === 'salespersons') {
+      if (!salespersonReport?.length) return toast.warning('Eksport üçün məlumat yoxdur');
+      exportToExcel(salespersonReport.map((r, i) => ({
+        '#': i + 1, 'Satıcı': r.salespersonName, 'Satış Sayı': r.salesCount,
+        'Məbləğ (AZN)': r.totalAmount, ...(isOwner() && { 'Qazanc (AZN)': r.totalProfit })
+      })), 'satici_hesabati');
+    } else if (activeTab === 'profit' && profitLossReport) {
+      exportToExcel([
+        { 'Hesab': 'Gəlir', 'Məbləğ (AZN)': profitLossReport.revenue },
+        { 'Hesab': 'Maya Dəyəri', 'Məbləğ (AZN)': profitLossReport.costOfGoods },
+        { 'Hesab': 'Brüt Mənfəət', 'Məbləğ (AZN)': profitLossReport.grossProfit },
+        ...(profitLossReport.expenses?.byCategory || []).map((c) => ({ 'Hesab': expenseCategoryLabel(c._id), 'Məbləğ (AZN)': c.amount })),
+        { 'Hesab': 'Toplam Xərclər', 'Məbləğ (AZN)': profitLossReport.expenses?.total },
+        { 'Hesab': 'Xalis Mənfəət', 'Məbləğ (AZN)': profitLossReport.netProfit }
+      ], 'menfeet_zerer');
     }
-    
-    const exportData = salesReport.data.map(row => ({
-      'Dövr': row._id.day 
-        ? `${row._id.day}.${row._id.month}.${row._id.year}`
-        : row._id.month 
-          ? `${row._id.month}/${row._id.year}`
-          : `Həftə ${row._id.week}/${row._id.year}`,
-      'Satış Sayı': row.salesCount,
-      'Məbləğ (AZN)': row.totalAmount,
-      'Nağd (AZN)': row.cashSales,
-      'POS (AZN)': row.posSales,
-      'Bank (AZN)': row.bankSales,
-      'Nisyə (AZN)': row.creditSales,
-      ...(isOwner() && { 'Qazanc (AZN)': row.totalProfit })
-    }));
-    
-    exportToExcel(exportData, 'satış_hesabatı');
   };
 
-  const exportProductReport = () => {
-    if (!productReport?.length) {
-      toast.warning('Eksport üçün məlumat yoxdur');
-      return;
-    }
-    
-    const exportData = productReport.map((row, index) => ({
-      '#': index + 1,
-      'Məhsul': row.productName,
-      'Satış Miqdarı': row.totalQuantity,
-      'Toplam Məbləğ (AZN)': row.totalAmount,
-      ...(isOwner() && { 'Qazanc (AZN)': row.totalProfit })
-    }));
-    
-    exportToExcel(exportData, 'məhsul_satış_hesabatı');
-  };
-
-  const exportInventoryReport = () => {
-    if (!inventoryReport?.byWarehouse?.length) {
-      toast.warning('Eksport üçün məlumat yoxdur');
-      return;
-    }
-    
-    const exportData = inventoryReport.byWarehouse.map(row => ({
-      'Anbar': row.warehouseName,
-      'Tip': row.warehouseType === 'main' ? 'Əsas' : 'Filial',
-      'Məhsul Sayı': row.totalProducts,
-      'Miqdar': row.totalQuantity,
-      ...(isOwner() && row.totalValue && { 'Maya Dəyəri (AZN)': row.totalValue }),
-      'Satış Dəyəri (AZN)': row.totalRetailValue
-    }));
-    
-    exportToExcel(exportData, 'anbar_hesabatı');
-  };
-
-  const exportProfitLossReport = () => {
-    if (!profitLossReport) {
-      toast.warning('Eksport üçün məlumat yoxdur');
-      return;
-    }
-    
-    const exportData = [
-      { 'Hesab': 'GƏLİR', 'Məbləğ (AZN)': profitLossReport.revenue },
-      { 'Hesab': '', 'Məbləğ (AZN)': '' },
-      { 'Hesab': 'MAYA DƏYƏRİ', 'Məbləğ (AZN)': profitLossReport.costOfGoods },
-      { 'Hesab': '', 'Məbləğ (AZN)': '' },
-      { 'Hesab': 'BRÜT QAZANC', 'Məbləğ (AZN)': profitLossReport.grossProfit },
-      { 'Hesab': '', 'Məbləğ (AZN)': '' },
-      { 'Hesab': 'ƏMƏLİYYAT XƏRCLƏRİ', 'Məbləğ (AZN)': '' },
-      ...(profitLossReport.expenses?.byCategory || []).map(cat => ({
-        'Hesab': `  ${cat._id}`,
-        'Məbləğ (AZN)': cat.amount
-      })),
-      { 'Hesab': 'Toplam Xərclər', 'Məbləğ (AZN)': profitLossReport.expenses?.total },
-      { 'Hesab': '', 'Məbləğ (AZN)': '' },
-      { 'Hesab': 'XALİS MƏNFƏƏT/ZƏRƏR', 'Məbləğ (AZN)': profitLossReport.netProfit },
-      { 'Hesab': '', 'Məbləğ (AZN)': '' },
-      { 'Hesab': 'Mənfəət Marjası (%)', 'Məbləğ (AZN)': profitLossReport.profitMargin }
-    ];
-    
-    exportToExcel(exportData, 'mənfəət_zərər_hesabatı');
-  };
-
-  const renderSalesReport = () => (
-    <div>
-      <div className="stats-grid" style={{ marginBottom: '1.5rem' }}>
-        <div className="stat-card">
-          <div className="stat-card-value">{salesReport?.totals?.salesCount || 0}</div>
-          <div className="stat-card-label">Toplam Satış</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-card-value">{formatCurrency(salesReport?.totals?.totalAmount)}</div>
-          <div className="stat-card-label">Toplam Məbləğ</div>
-        </div>
-        {isOwner() && (
-          <>
-            <div className="stat-card">
-              <div className="stat-card-value">{formatCurrency(salesReport?.totals?.totalCost)}</div>
-              <div className="stat-card-label">Maya Dəyəri</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-card-value" style={{ color: 'var(--success)' }}>
-                {formatCurrency(salesReport?.totals?.totalProfit)}
-              </div>
-              <div className="stat-card-label">Qazanc</div>
-            </div>
-          </>
-        )}
-      </div>
-
-      {salesReport?.data?.length > 0 && (
-        <div className="table-container">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Dövr</th>
-                <th>Satış Sayı</th>
-                <th>Məbləğ</th>
-                <th>Nağd</th>
-                <th>POS</th>
-                <th>Bank</th>
-                <th>Nisyə</th>
-                {isOwner() && <th>Qazanc</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {salesReport.data.map((row, index) => (
-                <tr key={index}>
-                  <td>
-                    {row._id.day 
-                      ? `${row._id.day}.${row._id.month}.${row._id.year}`
-                      : row._id.month 
-                        ? `${row._id.month}/${row._id.year}`
-                        : `Həftə ${row._id.week}/${row._id.year}`
-                    }
-                  </td>
-                  <td>{row.salesCount}</td>
-                  <td><strong>{formatCurrency(row.totalAmount)}</strong></td>
-                  <td>{formatCurrency(row.cashSales)}</td>
-                  <td>{formatCurrency(row.posSales)}</td>
-                  <td>{formatCurrency(row.bankSales)}</td>
-                  <td style={{ color: 'var(--warning)' }}>{formatCurrency(row.creditSales)}</td>
-                  {isOwner() && (
-                    <td style={{ color: 'var(--success)' }}>{formatCurrency(row.totalProfit)}</td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-
-  const renderProductReport = () => (
-    <div>
-      <h3 style={{ marginBottom: '1rem' }}>Ən Çox Satılan Məhsullar</h3>
-      {productReport?.length > 0 ? (
-        <div className="table-container">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Məhsul</th>
-                <th>Satış Miqdarı</th>
-                <th>Toplam Məbləğ</th>
-                {isOwner() && <th>Qazanc</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {productReport.map((row, index) => (
-                <tr key={row._id}>
-                  <td>{index + 1}</td>
-                  <td><strong>{row.productName}</strong></td>
-                  <td>{row.totalQuantity}</td>
-                  <td>{formatCurrency(row.totalAmount)}</td>
-                  {isOwner() && (
-                    <td style={{ color: 'var(--success)' }}>{formatCurrency(row.totalProfit)}</td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="empty-state">
-          <p className="empty-state-text">Məlumat tapılmadı</p>
-        </div>
-      )}
-    </div>
-  );
-
-  const renderInventoryReport = () => (
-    <div>
-      <div className="stats-grid" style={{ marginBottom: '1.5rem' }}>
-        <div className="stat-card">
-          <div className="stat-card-value">{inventoryReport?.totals?.totalProducts || 0}</div>
-          <div className="stat-card-label">Məhsul Növü</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-card-value">{inventoryReport?.totals?.totalQuantity || 0}</div>
-          <div className="stat-card-label">Toplam Miqdar</div>
-        </div>
-        {isOwner() && inventoryReport?.totals?.totalValue && (
-          <div className="stat-card">
-            <div className="stat-card-value">{formatCurrency(inventoryReport.totals.totalValue)}</div>
-            <div className="stat-card-label">Maya Dəyəri</div>
-          </div>
-        )}
-        <div className="stat-card">
-          <div className="stat-card-value">{formatCurrency(inventoryReport?.totals?.totalRetailValue)}</div>
-          <div className="stat-card-label">Satış Dəyəri</div>
-        </div>
-      </div>
-
-      <h3 style={{ marginBottom: '1rem' }}>Anbarlara görə Stok</h3>
-      {inventoryReport?.byWarehouse?.length > 0 ? (
-        <div className="table-container">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Anbar</th>
-                <th>Tip</th>
-                <th>Məhsul Sayı</th>
-                <th>Miqdar</th>
-                {isOwner() && <th>Maya Dəyəri</th>}
-                <th>Satış Dəyəri</th>
-              </tr>
-            </thead>
-            <tbody>
-              {inventoryReport.byWarehouse.map((row) => (
-                <tr key={row._id}>
-                  <td><strong>{row.warehouseName}</strong></td>
-                  <td>
-                    <span className={`badge ${row.warehouseType === 'main' ? 'badge-info' : 'badge-secondary'}`}>
-                      {row.warehouseType === 'main' ? 'Əsas' : 'Filial'}
-                    </span>
-                  </td>
-                  <td>{row.totalProducts}</td>
-                  <td>{row.totalQuantity}</td>
-                  {isOwner() && row.totalValue && (
-                    <td>{formatCurrency(row.totalValue)}</td>
-                  )}
-                  <td>{formatCurrency(row.totalRetailValue)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="empty-state">
-          <p className="empty-state-text">Məlumat tapılmadı</p>
-        </div>
-      )}
-    </div>
-  );
-
-  const renderProfitLossReport = () => {
-    if (!profitLossReport) return null;
-
-    const grossProfitMargin = profitLossReport.revenue > 0 
-      ? ((profitLossReport.grossProfit / profitLossReport.revenue) * 100).toFixed(1)
-      : 0;
-
+  /* ---------------- Renderers ---------------- */
+  const renderSales = () => {
+    const t = salesReport?.totals;
+    const rows = salesReport?.data || [];
+    const maxAmount = Math.max(...rows.map((r) => r.totalAmount), 1);
     return (
-      <div>
-        {/* Compact Financial Statement */}
-        <div style={{ 
-          background: 'white',
-          borderRadius: '8px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-          overflow: 'hidden'
-        }}>
-          {/* Header */}
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'space-between', 
-            alignItems: 'center',
-            padding: '1rem 1.25rem',
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            color: 'white'
-          }}>
-            <div>
-              <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700 }}>
-                Mənfəət və Zərər Hesabatı
-              </h2>
-              <p style={{ margin: '0.25rem 0 0 0', opacity: 0.9, fontSize: '0.8rem' }}>
-                {filters.startDate && filters.endDate 
-                  ? `${new Date(filters.startDate).toLocaleDateString('az-AZ')} - ${new Date(filters.endDate).toLocaleDateString('az-AZ')}`
-                  : 'Bütün Dövr'}
-              </p>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <div style={{ fontSize: '2rem', lineHeight: 1 }}>
-                {profitLossReport.netProfit >= 0 ? <FiTrendingUp /> : <FiTrendingDown />}
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '1.5rem', fontWeight: 800, lineHeight: 1 }}>
-                  {formatCurrency(Math.abs(profitLossReport.netProfit))}
-                </div>
-                <div style={{ fontSize: '0.75rem', marginTop: '0.25rem', opacity: 0.9 }}>
-                  {profitLossReport.netProfit >= 0 ? 'Mənfəət' : 'Zərər'}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Main Statement - Two Column Layout */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1px', background: '#e5e7eb' }}>
-            
-            {/* Left Column: Income Statement */}
-            <div style={{ background: 'white', padding: '1rem' }}>
-              <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem', fontWeight: 700, color: '#2563eb', borderBottom: '2px solid #2563eb', paddingBottom: '0.5rem' }}>
-                GƏLİR VƏ XƏRCLƏR
-              </h3>
-              
-              <div style={{ marginBottom: '0.75rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid #f0f0f0' }}>
-                  <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>Gəlir</span>
-                  <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#2563eb' }}>
-                    {formatCurrency(profitLossReport.revenue)}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid #f0f0f0' }}>
-                  <span style={{ fontSize: '0.875rem', color: '#666' }}>Maya Dəyəri</span>
-                  <span style={{ fontSize: '0.875rem', color: '#dc2626' }}>
-                    ({formatCurrency(profitLossReport.costOfGoods)})
-                  </span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', background: '#f0fdf4', margin: '0 -0.5rem', paddingLeft: '0.5rem', paddingRight: '0.5rem', borderLeft: '3px solid #16a34a' }}>
-                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#16a34a' }}>Brüt Mənfəət</span>
-                  <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#16a34a' }}>
-                    {formatCurrency(profitLossReport.grossProfit)}
-                  </span>
-                </div>
-              </div>
-
-              <h4 style={{ margin: '0.75rem 0 0.5rem 0', fontSize: '0.875rem', fontWeight: 600, color: '#333' }}>
-                Əməliyyat Xərcləri
-              </h4>
-              
-              {profitLossReport.expenses?.byCategory?.length > 0 ? (
-                <div style={{ marginBottom: '0.5rem' }}>
-                  {profitLossReport.expenses.byCategory.map((cat) => (
-                    <div 
-                      key={cat._id}
-                      style={{ 
-                        display: 'flex', 
-                        justifyContent: 'space-between',
-                        padding: '0.4rem 0.5rem',
-                        fontSize: '0.8125rem',
-                        borderBottom: '1px solid #f5f5f5'
-                      }}
-                    >
-                      <span style={{ textTransform: 'capitalize', color: '#666' }}>
-                        {cat._id}
-                      </span>
-                      <span style={{ color: '#dc2626', fontWeight: 500 }}>
-                        {formatCurrency(cat.amount)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p style={{ color: '#999', fontStyle: 'italic', fontSize: '0.8125rem', margin: '0.5rem 0' }}>
-                  Xərc yoxdur
-                </p>
-              )}
-
-              <div style={{ 
-                display: 'flex', 
-                justifyContent: 'space-between',
-                padding: '0.5rem',
-                background: '#fef2f2',
-                borderRadius: '4px',
-                border: '1px solid #fecaca',
-                marginTop: '0.5rem'
-              }}>
-                <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#333' }}>
-                  Toplam Xərclər
-                </span>
-                <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#dc2626' }}>
-                  ({formatCurrency(profitLossReport.expenses?.total || 0)})
-                </span>
-              </div>
-
-              <div style={{ 
-                display: 'flex', 
-                justifyContent: 'space-between',
-                padding: '0.75rem',
-                marginTop: '0.75rem',
-                background: profitLossReport.netProfit >= 0 ? '#f0fdf4' : '#fef2f2',
-                borderRadius: '4px',
-                border: `2px solid ${profitLossReport.netProfit >= 0 ? '#16a34a' : '#dc2626'}`
-              }}>
-                <span style={{ fontSize: '0.95rem', fontWeight: 700 }}>
-                  Xalis Mənfəət/Zərər
-                </span>
-                <span style={{ 
-                  fontSize: '1.1rem', 
-                  fontWeight: 800,
-                  color: profitLossReport.netProfit >= 0 ? '#16a34a' : '#dc2626'
-                }}>
-                  {formatCurrency(Math.abs(profitLossReport.netProfit))}
-                </span>
-              </div>
-            </div>
-
-            {/* Right Column: Key Metrics */}
-            <div style={{ background: '#fafafa', padding: '1rem' }}>
-              <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem', fontWeight: 700, color: '#333', borderBottom: '2px solid #e5e7eb', paddingBottom: '0.5rem' }}>
-                MALİYYƏ GÖSTƏRİCİLƏRİ
-              </h3>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                <div style={{ 
-                  background: 'white', 
-                  padding: '0.75rem', 
-                  borderRadius: '6px',
-                  border: '1px solid #e5e7eb'
-                }}>
-                  <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '0.25rem' }}>
-                    Brüt Mənfəət Marjası
-                  </div>
-                  <div style={{ fontSize: '1.75rem', fontWeight: 700, color: '#2563eb' }}>
-                    {grossProfitMargin}%
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: '#999', marginTop: '0.25rem' }}>
-                    Hər 100 AZN gəlirdən {grossProfitMargin} AZN brüt qazanc
-                  </div>
-                </div>
-
-                <div style={{ 
-                  background: 'white', 
-                  padding: '0.75rem', 
-                  borderRadius: '6px',
-                  border: '1px solid #e5e7eb'
-                }}>
-                  <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '0.25rem' }}>
-                    Xalis Mənfəət Marjası
-                  </div>
-                  <div style={{ 
-                    fontSize: '1.75rem', 
-                    fontWeight: 700,
-                    color: profitLossReport.netProfit >= 0 ? '#16a34a' : '#dc2626'
-                  }}>
-                    {profitLossReport.profitMargin}%
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: '#999', marginTop: '0.25rem' }}>
-                    Hər 100 AZN gəlirdən {profitLossReport.profitMargin} AZN xalis qazanc
-                  </div>
-                </div>
-
-                <div style={{ 
-                  background: 'white', 
-                  padding: '0.75rem', 
-                  borderRadius: '6px',
-                  border: '1px solid #e5e7eb'
-                }}>
-                  <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '0.25rem' }}>
-                    Xərc Nisbəti
-                  </div>
-                  <div style={{ fontSize: '1.75rem', fontWeight: 700, color: '#f59e0b' }}>
-                    {profitLossReport.revenue > 0 
-                      ? ((profitLossReport.expenses?.total / profitLossReport.revenue) * 100).toFixed(1)
-                      : 0}%
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: '#999', marginTop: '0.25rem' }}>
-                    Əməliyyat xərclərinin gəlirə nisbəti
-                  </div>
-                </div>
-
-                <div style={{ 
-                  background: 'white', 
-                  padding: '0.75rem', 
-                  borderRadius: '6px',
-                  border: '1px solid #e5e7eb'
-                }}>
-                  <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '0.25rem' }}>
-                    COGS Nisbəti
-                  </div>
-                  <div style={{ fontSize: '1.75rem', fontWeight: 700, color: '#8b5cf6' }}>
-                    {profitLossReport.revenue > 0 
-                      ? ((profitLossReport.costOfGoods / profitLossReport.revenue) * 100).toFixed(1)
-                      : 0}%
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: '#999', marginTop: '0.25rem' }}>
-                    Maya dəyərinin gəlirə nisbəti
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+      <>
+        <div className="kpi-grid">
+          <KpiCard icon={FiHash} color="kpi-slate" value={formatNumber(t?.salesCount)} label="Toplam Satış" />
+          <KpiCard icon={FiDollarSign} color="kpi-blue" value={formatCurrency(t?.totalAmount)} label="Toplam Dövriyyə" />
+          {isOwner() && <KpiCard icon={FiPackage} color="kpi-amber" value={formatCurrency(t?.totalCost)} label="Maya Dəyəri" />}
+          {isOwner() && <KpiCard icon={FiTrendingUp} color="kpi-green" value={formatCurrency(t?.totalProfit)} label="Xalis Qazanc" />}
         </div>
-      </div>
+
+        {rows.length > 0 ? (
+          <div className="table-container">
+            <table className="table rep-table">
+              <thead>
+                <tr>
+                  <th>Dövr</th>
+                  <th className="num">Satış</th>
+                  <th className="num">Məbləğ</th>
+                  <th className="num">Nağd</th>
+                  <th className="num">POS</th>
+                  <th className="num">Bank</th>
+                  <th className="num">Nisyə</th>
+                  {isOwner() && <th className="num">Qazanc</th>}
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => {
+                  const range = periodRange(r._id);
+                  return (
+                    <tr
+                      key={i}
+                      className={range ? 'rep-row-clickable' : ''}
+                      onClick={range ? () => openDaily(r) : undefined}
+                    >
+                      <td><strong>{periodLabel(r._id)}</strong></td>
+                      <td className="num">{r.salesCount}</td>
+                      <td className="num"><strong>{formatCurrency(r.totalAmount)}</strong></td>
+                      <td className="num">{formatCurrency(r.cashSales)}</td>
+                      <td className="num">{formatCurrency(r.posSales)}</td>
+                      <td className="num">{formatCurrency(r.bankSales)}</td>
+                      <td className="num" style={{ color: 'var(--warning)' }}>{formatCurrency(r.creditSales)}</td>
+                      {isOwner() && <td className="num" style={{ color: 'var(--success)' }}>{formatCurrency(r.totalProfit)}</td>}
+                      <td>
+                        {range && (
+                          <span className="rep-drill-hint">Detallar <FiChevronRight /></span>
+                        )}
+                        <div className="rep-bar-track" style={{ marginTop: 4 }}>
+                          <div className="rep-bar-fill" style={{ width: `${(r.totalAmount / maxAmount) * 100}%` }} />
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : <Empty />}
+      </>
     );
   };
+
+  const renderProducts = () => {
+    const rows = productReport || [];
+    const maxQty = Math.max(...rows.map((r) => r.totalQuantity), 1);
+    return (
+      <>
+        <h3 className="rep-section-title"><FiBox /> Ən Çox Satılan Məhsullar</h3>
+        {rows.length > 0 ? (
+          <div className="table-container">
+            <table className="table rep-table">
+              <thead>
+                <tr>
+                  <th style={{ width: 44 }}>#</th>
+                  <th>Məhsul</th>
+                  <th style={{ width: '22%' }}>Satış həcmi</th>
+                  <th className="num">Miqdar</th>
+                  <th className="num">Məbləğ</th>
+                  {isOwner() && <th className="num">Qazanc</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r._id}>
+                    <td><span className={`rep-rank ${i < 3 ? `top${i + 1}` : ''}`}>{i + 1}</span></td>
+                    <td><strong>{r.productName}</strong></td>
+                    <td>
+                      <div className="rep-bar-track">
+                        <div className="rep-bar-fill" style={{ width: `${(r.totalQuantity / maxQty) * 100}%` }} />
+                      </div>
+                    </td>
+                    <td className="num">{formatNumber(r.totalQuantity)}</td>
+                    <td className="num"><strong>{formatCurrency(r.totalAmount)}</strong></td>
+                    {isOwner() && <td className="num" style={{ color: 'var(--success)' }}>{formatCurrency(r.totalProfit)}</td>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <Empty />}
+      </>
+    );
+  };
+
+  const renderInventory = () => {
+    const t = inventoryReport?.totals;
+    const rows = inventoryReport?.byWarehouse || [];
+    return (
+      <>
+        <div className="kpi-grid">
+          <KpiCard icon={FiBox} color="kpi-slate" value={formatNumber(t?.totalProducts)} label="Məhsul Növü" />
+          <KpiCard icon={FiPackage} color="kpi-blue" value={formatNumber(t?.totalQuantity)} label="Toplam Miqdar" />
+          {isOwner() && t?.totalValue != null && (
+            <KpiCard icon={FiDollarSign} color="kpi-amber" value={formatCurrency(t.totalValue)} label="Maya Dəyəri" />
+          )}
+          <KpiCard icon={FiTrendingUp} color="kpi-green" value={formatCurrency(t?.totalRetailValue)} label="Satış Dəyəri" />
+        </div>
+
+        <h3 className="rep-section-title"><FiPackage /> Anbarlara görə Stok</h3>
+        {rows.length > 0 ? (
+          <div className="table-container">
+            <table className="table rep-table">
+              <thead>
+                <tr>
+                  <th>Anbar</th>
+                  <th>Tip</th>
+                  <th className="num">Məhsul Sayı</th>
+                  <th className="num">Miqdar</th>
+                  {isOwner() && <th className="num">Maya Dəyəri</th>}
+                  <th className="num">Satış Dəyəri</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r._id}>
+                    <td><strong>{r.warehouseName}</strong></td>
+                    <td><span className={`badge ${r.warehouseType === 'main' ? 'badge-info' : 'badge-secondary'}`}>{r.warehouseType === 'main' ? 'Əsas' : 'Filial'}</span></td>
+                    <td className="num">{formatNumber(r.totalProducts)}</td>
+                    <td className="num">{formatNumber(r.totalQuantity)}</td>
+                    {isOwner() && <td className="num">{r.totalValue != null ? formatCurrency(r.totalValue) : '—'}</td>}
+                    <td className="num">{formatCurrency(r.totalRetailValue)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <Empty />}
+      </>
+    );
+  };
+
+  const renderSalespersons = () => {
+    const rows = salespersonReport || [];
+    const maxAmount = Math.max(...rows.map((r) => r.totalAmount), 1);
+    const totals = rows.reduce((a, r) => ({
+      count: a.count + (r.salesCount || 0),
+      amount: a.amount + (r.totalAmount || 0),
+      profit: a.profit + (r.totalProfit || 0)
+    }), { count: 0, amount: 0, profit: 0 });
+    return (
+      <>
+        <div className="kpi-grid">
+          <KpiCard icon={FiUserCheck} color="kpi-purple" value={formatNumber(rows.length)} label="Aktiv Satıcı" />
+          <KpiCard icon={FiHash} color="kpi-slate" value={formatNumber(totals.count)} label="Toplam Satış" />
+          <KpiCard icon={FiDollarSign} color="kpi-blue" value={formatCurrency(totals.amount)} label="Toplam Dövriyyə" />
+          {isOwner() && <KpiCard icon={FiTrendingUp} color="kpi-green" value={formatCurrency(totals.profit)} label="Toplam Qazanc" />}
+        </div>
+
+        <h3 className="rep-section-title"><FiUserCheck /> Satıcılara görə Performans (Bonus)</h3>
+        {rows.length > 0 ? (
+          <div className="table-container">
+            <table className="table rep-table">
+              <thead>
+                <tr>
+                  <th style={{ width: 44 }}>#</th>
+                  <th>Satıcı</th>
+                  <th style={{ width: '22%' }}>Dövriyyə payı</th>
+                  <th className="num">Satış sayı</th>
+                  <th className="num">Dövriyyə</th>
+                  {isOwner() && <th className="num">Qazanc</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r._id}>
+                    <td><span className={`rep-rank ${i < 3 ? `top${i + 1}` : ''}`}>{i + 1}</span></td>
+                    <td><strong>{r.salespersonName || '—'}</strong></td>
+                    <td>
+                      <div className="rep-bar-track">
+                        <div className="rep-bar-fill" style={{ width: `${(r.totalAmount / maxAmount) * 100}%` }} />
+                      </div>
+                    </td>
+                    <td className="num">{formatNumber(r.salesCount)}</td>
+                    <td className="num"><strong>{formatCurrency(r.totalAmount)}</strong></td>
+                    {isOwner() && <td className="num" style={{ color: 'var(--success)' }}>{formatCurrency(r.totalProfit)}</td>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <Empty text="Bu dövrdə satıcı satışı yoxdur" />}
+      </>
+    );
+  };
+
+  const renderProfit = () => {
+    if (!profitLossReport) return null;
+    const p = profitLossReport;
+    const grossMargin = p.revenue > 0 ? ((p.grossProfit / p.revenue) * 100).toFixed(1) : 0;
+    const expenseRatio = p.revenue > 0 ? ((p.expenses?.total / p.revenue) * 100).toFixed(1) : 0;
+    const cogsRatio = p.revenue > 0 ? ((p.costOfGoods / p.revenue) * 100).toFixed(1) : 0;
+    const positive = p.netProfit >= 0;
+    return (
+      <>
+        <div className="kpi-grid">
+          <KpiCard icon={FiDollarSign} color="kpi-blue" value={formatCurrency(p.revenue)} label="Gəlir" />
+          <KpiCard icon={FiPackage} color="kpi-amber" value={formatCurrency(p.costOfGoods)} label="Maya Dəyəri (COGS)" />
+          <KpiCard icon={FiCreditCard} color="kpi-red" value={formatCurrency(p.expenses?.total)} label="Əməliyyat Xərcləri" />
+          <KpiCard icon={positive ? FiTrendingUp : FiTrendingDown} color={positive ? 'kpi-green' : 'kpi-red'}
+            value={formatCurrency(p.netProfit)} label={positive ? 'Xalis Mənfəət' : 'Xalis Zərər'} />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.3fr) minmax(0,1fr)', gap: '1.25rem' }} className="rep-pl-grid">
+          {/* Income statement */}
+          <div>
+            <h3 className="rep-section-title"><FiPieChart /> Gəlir Hesabatı</h3>
+            <table className="table rep-table">
+              <tbody>
+                <tr><td>Gəlir</td><td className="num"><strong>{formatCurrency(p.revenue)}</strong></td></tr>
+                <tr><td style={{ color: 'var(--gray-500)' }}>Maya dəyəri</td><td className="num" style={{ color: 'var(--danger)' }}>({formatCurrency(p.costOfGoods)})</td></tr>
+                <tr style={{ background: 'rgba(34,197,94,0.08)' }}>
+                  <td><strong style={{ color: '#16a34a' }}>Brüt Mənfəət</strong></td>
+                  <td className="num"><strong style={{ color: '#16a34a' }}>{formatCurrency(p.grossProfit)}</strong></td>
+                </tr>
+                {(p.expenses?.byCategory || []).map((c) => (
+                  <tr key={c._id}>
+                    <td style={{ paddingLeft: '1.5rem', color: 'var(--gray-500)' }}>{expenseCategoryLabel(c._id)}</td>
+                    <td className="num" style={{ color: 'var(--danger)' }}>({formatCurrency(c.amount)})</td>
+                  </tr>
+                ))}
+                <tr>
+                  <td><strong>Toplam Xərclər</strong></td>
+                  <td className="num"><strong style={{ color: 'var(--danger)' }}>({formatCurrency(p.expenses?.total)})</strong></td>
+                </tr>
+                <tr style={{ background: positive ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)' }}>
+                  <td><strong>{positive ? 'Xalis Mənfəət' : 'Xalis Zərər'}</strong></td>
+                  <td className="num"><strong style={{ color: positive ? '#16a34a' : '#dc2626', fontSize: '1.05rem' }}>{formatCurrency(p.netProfit)}</strong></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Ratios */}
+          <div>
+            <h3 className="rep-section-title"><FiTrendingUp /> Maliyyə Göstəriciləri</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <Ratio label="Brüt Mənfəət Marjası" value={`${grossMargin}%`} color="#2563eb" hint={`Hər 100 AZN gəlirdən ${grossMargin} AZN brüt qazanc`} />
+              <Ratio label="Xalis Mənfəət Marjası" value={`${p.profitMargin}%`} color={positive ? '#16a34a' : '#dc2626'} hint={`Hər 100 AZN gəlirdən ${p.profitMargin} AZN xalis qazanc`} />
+              <Ratio label="Xərc Nisbəti" value={`${expenseRatio}%`} color="#d97706" hint="Əməliyyat xərclərinin gəlirə nisbəti" />
+              <Ratio label="COGS Nisbəti" value={`${cogsRatio}%`} color="#7c3aed" hint="Maya dəyərinin gəlirə nisbəti" />
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  };
+
+  const showFilters = ['sales', 'products', 'salespersons', 'profit'].includes(activeTab);
 
   return (
     <div>
       <div className="page-header">
         <div>
           <h1 className="page-title">Hesabatlar</h1>
+          <p className="page-subtitle">Satış, anbar və maliyyə analitikası</p>
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: '1.5rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <button
-              className={`btn ${activeTab === 'sales' ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setActiveTab('sales')}
-            >
-              Satış Hesabatı
-            </button>
-            <button
-              className={`btn ${activeTab === 'products' ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setActiveTab('products')}
-            >
-              Məhsul Satışı
-            </button>
-            <button
-              className={`btn ${activeTab === 'inventory' ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setActiveTab('inventory')}
-            >
-              Anbar Hesabatı
-            </button>
-            {isOwner() && (
-              <button
-                className={`btn ${activeTab === 'profit' ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => setActiveTab('profit')}
-              >
-                Mənfəət/Zərər
+      <div className="card rep-toolbar" style={{ marginBottom: '1.25rem' }}>
+        <div className="rep-toolbar-top">
+          <div className="rep-tabs">
+            {TABS.filter((t) => !t.ownerOnly || isOwner()).map((t) => (
+              <button key={t.key} className={`rep-tab ${activeTab === t.key ? 'active' : ''}`} onClick={() => setActiveTab(t.key)}>
+                <t.icon /> {t.label}
               </button>
-            )}
+            ))}
           </div>
-          
-          {/* Export Button */}
           {!loading && (
-            <button
-              className="btn"
-              onClick={() => {
-                if (activeTab === 'sales') exportSalesReport();
-                else if (activeTab === 'products') exportProductReport();
-                else if (activeTab === 'inventory') exportInventoryReport();
-                else if (activeTab === 'profit' && isOwner()) exportProfitLossReport();
-              }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                background: '#10b981',
-                color: 'white',
-                border: 'none'
-              }}
-            >
-              <FiDownload />
-              Excel
-            </button>
+            <button className="btn rep-export" onClick={handleExport}><FiDownload /> Excel</button>
           )}
         </div>
 
-        {(activeTab === 'sales' || activeTab === 'products' || activeTab === 'profit') && (
-          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">Başlanğıc</label>
-              <input
-                type="date"
-                className="form-control"
-                value={filters.startDate}
-                onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-              />
+        {showFilters && (
+          <>
+            <div className="rep-presets">
+              {[
+                ['today', 'Bu gün'], ['yesterday', 'Dünən'], ['thisWeek', 'Bu həftə'],
+                ['thisMonth', 'Bu ay'], ['lastMonth', 'Keçən ay']
+              ].map(([k, lbl]) => (
+                <button key={k} className={`rep-preset ${activePreset === k ? 'active' : ''}`} onClick={() => applyPreset(k)}>{lbl}</button>
+              ))}
             </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">Son</label>
-              <input
-                type="date"
-                className="form-control"
-                value={filters.endDate}
-                onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-              />
-            </div>
-            {activeTab === 'sales' && (
+            <div className="rep-filters">
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">Qruplaşdırma</label>
-                <select
-                  className="form-control"
-                  value={filters.groupBy}
-                  onChange={(e) => setFilters({ ...filters, groupBy: e.target.value })}
-                >
-                  <option value="day">Günlük</option>
-                  <option value="week">Həftəlik</option>
-                  <option value="month">Aylıq</option>
-                </select>
+                <label className="form-label">Başlanğıc</label>
+                <input type="date" className="form-control" value={filters.startDate}
+                  onChange={(e) => { setActivePreset(''); setFilters({ ...filters, startDate: e.target.value }); }} />
               </div>
-            )}
-            <button className="btn btn-primary" onClick={fetchReport}>
-              Hesabla
-            </button>
-          </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Son</label>
+                <input type="date" className="form-control" value={filters.endDate}
+                  onChange={(e) => { setActivePreset(''); setFilters({ ...filters, endDate: e.target.value }); }} />
+              </div>
+              {activeTab === 'sales' && (
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Qruplaşdırma</label>
+                  <select className="form-control" value={filters.groupBy}
+                    onChange={(e) => setFilters({ ...filters, groupBy: e.target.value })}>
+                    <option value="day">Günlük</option>
+                    <option value="week">Həftəlik</option>
+                    <option value="month">Aylıq</option>
+                  </select>
+                </div>
+              )}
+              <button className="btn btn-primary" onClick={() => fetchReport(filters, activeTab)}>Hesabla</button>
+            </div>
+          </>
         )}
       </div>
 
       <div className="card">
         {loading ? (
-          <div className="loading">
-            <div className="spinner"></div>
-          </div>
+          <div className="loading"><div className="spinner"></div></div>
         ) : (
           <>
-            {activeTab === 'sales' && renderSalesReport()}
-            {activeTab === 'products' && renderProductReport()}
-            {activeTab === 'inventory' && renderInventoryReport()}
-            {activeTab === 'profit' && isOwner() && renderProfitLossReport()}
+            {activeTab === 'sales' && renderSales()}
+            {activeTab === 'products' && renderProducts()}
+            {activeTab === 'inventory' && renderInventory()}
+            {activeTab === 'salespersons' && renderSalespersons()}
+            {activeTab === 'profit' && isOwner() && renderProfit()}
           </>
         )}
       </div>
+
+      {/* ---------- Daily detail modal ---------- */}
+      {daily && (
+        <div className="modal-overlay" onClick={() => setDaily(null)}>
+          <div className="modal daily-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Günlük Hesabat — {daily.label}</h3>
+              <button className="modal-close" onClick={() => setDaily(null)}><FiX /></button>
+            </div>
+            <div className="modal-body">
+              <div className="daily-summary-grid">
+                <SummaryItem v={formatNumber(daily.row.salesCount)} l="Satış sayı" />
+                <SummaryItem v={formatCurrency(daily.row.totalAmount)} l="Dövriyyə" />
+                <SummaryItem v={formatCurrency(daily.row.cashSales)} l="Nağd" />
+                <SummaryItem v={formatCurrency(daily.row.posSales)} l="POS" />
+                <SummaryItem v={formatCurrency(daily.row.bankSales)} l="Bank" />
+                <SummaryItem v={formatCurrency(daily.row.creditSales)} l="Nisyə" />
+                {isOwner() && <SummaryItem v={formatCurrency(daily.row.totalProfit)} l="Qazanc" />}
+              </div>
+
+              {daily.loading ? (
+                <div className="loading"><div className="spinner"></div></div>
+              ) : daily.sales.length === 0 ? (
+                <Empty text="Bu gün üçün satış tapılmadı" />
+              ) : (
+                <div className="table-container">
+                  <table className="table rep-table">
+                    <thead>
+                      <tr>
+                        <th>Saat</th>
+                        <th>Satış No</th>
+                        <th>Müştəri</th>
+                        <th>Satıcı</th>
+                        <th>Ödəniş</th>
+                        <th className="num">Məbləğ</th>
+                        {isOwner() && <th className="num">Qazanc</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {daily.sales.map((s) => (
+                        <tr key={s._id}>
+                          <td>{new Date(s.date).toLocaleTimeString('az-AZ', { hour: '2-digit', minute: '2-digit' })}</td>
+                          <td><strong>{s.saleNumber}</strong></td>
+                          <td>{s.customerId?.name || '—'}</td>
+                          <td>{s.salespersonName || '—'}</td>
+                          <td><span className={`badge ${s.paymentType === 'credit' ? 'badge-warning' : 'badge-success'}`}>{formatPaymentLabel(s.paymentType, s.paymentMethod)}</span></td>
+                          <td className="num"><strong>{formatCurrency(s.totalAmount)}</strong></td>
+                          {isOwner() && <td className="num" style={{ color: 'var(--success)' }}>{formatCurrency(s.profit)}</td>}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+const Empty = ({ text = 'Məlumat tapılmadı' }) => (
+  <div className="empty-state"><div className="empty-state-icon">📊</div><p className="empty-state-text">{text}</p></div>
+);
+
+const SummaryItem = ({ v, l }) => (
+  <div className="daily-summary-item"><div className="v">{v}</div><div className="l">{l}</div></div>
+);
+
+const Ratio = ({ label, value, color, hint }) => (
+  <div style={{ background: '#fff', padding: '0.85rem', borderRadius: 10, border: '1px solid var(--gray-200)' }}>
+    <div style={{ fontSize: '0.75rem', color: 'var(--gray-500)' }}>{label}</div>
+    <div style={{ fontSize: '1.7rem', fontWeight: 800, color, lineHeight: 1.1, marginTop: 2 }}>{value}</div>
+    <div style={{ fontSize: '0.72rem', color: 'var(--gray-400)', marginTop: 4 }}>{hint}</div>
+  </div>
+);
 
 export default Reports;

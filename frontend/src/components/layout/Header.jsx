@@ -17,7 +17,8 @@ import {
   FiMenu,
   FiX,
   FiSettings,
-  FiGrid
+  FiGrid,
+  FiUserCheck
 } from 'react-icons/fi';
 import { useAuth } from '../../context/AuthContext';
 import './Header.css';
@@ -63,19 +64,21 @@ const Header = () => {
     }
   };
 
-  const isParametrlerActive = ['/customers', '/vendors', '/warehouses'].includes(location.pathname);
-  const isHesabatlarActive = ['/reports', '/debtors', '/creditors'].includes(location.pathname);
+  const isParametrlerActive = ['/vendors', '/warehouses', '/categories', '/salesmen', '/ustalar'].includes(location.pathname);
+  const isHesabatlarActive = ['/reports', '/debtors', '/creditors', '/fakturalar'].includes(location.pathname);
+  const employee = isEmployee();
+  const homePath = employee ? '/sales' : '/';
 
   return (
     <header className="header">
       <div className="header-container">
         <div className="header-left">
-          <NavLink to="/" className="header-logo">
+          <NavLink to={homePath} className="header-logo">
             <img src="/images/logo.png" alt="Alfatherm" className="logo-img" />
           </NavLink>
           
           <nav className="header-nav">
-            {!isEmployee() && (
+            {!employee && (
               <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} end>
                 <FiHome className="nav-icon" />
                 <span className="nav-label">Əsas Səhifə</span>
@@ -86,26 +89,42 @@ const Header = () => {
               <FiShoppingCart className="nav-icon" />
               <span className="nav-label">Satış</span>
             </NavLink>
+
+            {employee && (
+              <>
+                <NavLink to="/products" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                  <FiBox className="nav-icon" />
+                  <span className="nav-label">Məhsullar</span>
+                </NavLink>
+                <NavLink to="/customers" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                  <FiUsers className="nav-icon" />
+                  <span className="nav-label">Müştərilər</span>
+                </NavLink>
+              </>
+            )}
             
-            <NavLink to="/inventory" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-              <FiPackage className="nav-icon" />
-              <span className="nav-label">Anbar</span>
-            </NavLink>
+            {!employee && (
+              <NavLink to="/inventory" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                <FiPackage className="nav-icon" />
+                <span className="nav-label">Anbar</span>
+              </NavLink>
+            )}
             
-            <NavLink to="/products" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-              <FiBox className="nav-icon" />
-              <span className="nav-label">Məhsullar</span>
-            </NavLink>
+            {!employee && (
+              <NavLink to="/products" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                <FiBox className="nav-icon" />
+                <span className="nav-label">Məhsullar</span>
+              </NavLink>
+            )}
             
-            {!isEmployee() && (
+            {!employee && (
               <NavLink to="/expenses" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
                 <FiDollarSign className="nav-icon" />
                 <span className="nav-label">Xərclər</span>
               </NavLink>
             )}
 
-            {/* Hesabatlar Dropdown - Hidden for employees */}
-            {!isEmployee() && (
+            {!employee && (
               <div className="nav-dropdown" ref={hesabatlarRef}>
               <button 
                 className={`nav-link nav-dropdown-btn ${isHesabatlarActive ? 'active' : ''}`}
@@ -133,70 +152,92 @@ const Header = () => {
                     <FiFileText className="nav-icon" />
                     <span>Debitorlar</span>
                   </NavLink>
-                  <NavLink 
-                    to="/creditors" 
+                  <NavLink
+                    to="/creditors"
                     className={({ isActive }) => `nav-dropdown-item ${isActive ? 'active' : ''}`}
                     onClick={() => setHesabatlarOpen(false)}
                   >
                     <FiCreditCard className="nav-icon" />
                     <span>Kreditorlar</span>
                   </NavLink>
+                  <NavLink
+                    to="/fakturalar"
+                    className={({ isActive }) => `nav-dropdown-item ${isActive ? 'active' : ''}`}
+                    onClick={() => setHesabatlarOpen(false)}
+                  >
+                    <FiFileText className="nav-icon" />
+                    <span>Fakturalar</span>
+                  </NavLink>
                 </div>
               )}
               </div>
             )}
 
-            {/* Parametrlər Dropdown */}
-            <div className="nav-dropdown" ref={parametrlerRef}>
-              <button 
-                className={`nav-link nav-dropdown-btn ${isParametrlerActive ? 'active' : ''}`}
-                onClick={() => setParametrlerOpen(!parametrlerOpen)}
-              >
-                <FiSettings className="nav-icon" />
-                <span className="nav-label">Parametrlər</span>
-                <FiChevronDown className={`nav-dropdown-arrow ${parametrlerOpen ? 'open' : ''}`} />
-              </button>
-              {parametrlerOpen && (
-                <div className="nav-dropdown-menu">
-                  <NavLink 
-                    to="/customers" 
-                    className={({ isActive }) => `nav-dropdown-item ${isActive ? 'active' : ''}`}
-                    onClick={() => setParametrlerOpen(false)}
-                  >
-                    <FiUsers className="nav-icon" />
-                    <span>Müştərilər</span>
-                  </NavLink>
-                  {!isEmployee() && (
-                    <>
-                      <NavLink 
-                        to="/vendors" 
-                        className={({ isActive }) => `nav-dropdown-item ${isActive ? 'active' : ''}`}
-                        onClick={() => setParametrlerOpen(false)}
-                      >
-                        <FiTruck className="nav-icon" />
-                        <span>Vendorlar</span>
-                      </NavLink>
-                      <NavLink 
-                        to="/warehouses" 
-                        className={({ isActive }) => `nav-dropdown-item ${isActive ? 'active' : ''}`}
-                        onClick={() => setParametrlerOpen(false)}
-                      >
-                        <FiHome className="nav-icon" />
-                        <span>Anbarlar</span>
-                      </NavLink>
-                      <NavLink 
-                        to="/categories" 
-                        className={({ isActive }) => `nav-dropdown-item ${isActive ? 'active' : ''}`}
-                        onClick={() => setParametrlerOpen(false)}
-                      >
-                        <FiGrid className="nav-icon" />
-                        <span>Kateqoriyalar</span>
-                      </NavLink>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
+            {!employee && (
+              <div className="nav-dropdown" ref={parametrlerRef}>
+                <button
+                  type="button"
+                  className={`nav-link nav-dropdown-btn ${isParametrlerActive ? 'active' : ''}`}
+                  onClick={() => setParametrlerOpen(!parametrlerOpen)}
+                >
+                  <FiSettings className="nav-icon" />
+                  <span className="nav-label">Parametrlər</span>
+                  <FiChevronDown className={`nav-dropdown-arrow ${parametrlerOpen ? 'open' : ''}`} />
+                </button>
+                {parametrlerOpen && (
+                  <div className="nav-dropdown-menu">
+                    <NavLink
+                      to="/customers"
+                      className={({ isActive }) => `nav-dropdown-item ${isActive ? 'active' : ''}`}
+                      onClick={() => setParametrlerOpen(false)}
+                    >
+                      <FiUsers className="nav-icon" />
+                      <span>Müştərilər</span>
+                    </NavLink>
+                    <NavLink
+                      to="/salesmen"
+                      className={({ isActive }) => `nav-dropdown-item ${isActive ? 'active' : ''}`}
+                      onClick={() => setParametrlerOpen(false)}
+                    >
+                      <FiUserCheck className="nav-icon" />
+                      <span>Satıcılar</span>
+                    </NavLink>
+                    <NavLink
+                      to="/ustalar"
+                      className={({ isActive }) => `nav-dropdown-item ${isActive ? 'active' : ''}`}
+                      onClick={() => setParametrlerOpen(false)}
+                    >
+                      <FiUserCheck className="nav-icon" />
+                      <span>Ustalar</span>
+                    </NavLink>
+                    <NavLink
+                      to="/vendors"
+                      className={({ isActive }) => `nav-dropdown-item ${isActive ? 'active' : ''}`}
+                      onClick={() => setParametrlerOpen(false)}
+                    >
+                      <FiTruck className="nav-icon" />
+                      <span>Vendorlar</span>
+                    </NavLink>
+                    <NavLink
+                      to="/warehouses"
+                      className={({ isActive }) => `nav-dropdown-item ${isActive ? 'active' : ''}`}
+                      onClick={() => setParametrlerOpen(false)}
+                    >
+                      <FiHome className="nav-icon" />
+                      <span>Anbarlar</span>
+                    </NavLink>
+                    <NavLink
+                      to="/categories"
+                      className={({ isActive }) => `nav-dropdown-item ${isActive ? 'active' : ''}`}
+                      onClick={() => setParametrlerOpen(false)}
+                    >
+                      <FiGrid className="nav-icon" />
+                      <span>Kateqoriyalar</span>
+                    </NavLink>
+                  </div>
+                )}
+              </div>
+            )}
           </nav>
         </div>
         
@@ -234,7 +275,7 @@ const Header = () => {
 
       {mobileMenuOpen && (
         <nav className="mobile-nav">
-          {!isEmployee() && (
+          {!employee && (
             <NavLink to="/" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} end onClick={() => setMobileMenuOpen(false)}>
               <FiHome className="nav-icon" /><span>Əsas Səhifə</span>
             </NavLink>
@@ -242,40 +283,43 @@ const Header = () => {
           <NavLink to="/sales" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
             <FiShoppingCart className="nav-icon" /><span>Satış</span>
           </NavLink>
-          <NavLink to="/inventory" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
-            <FiPackage className="nav-icon" /><span>Anbar</span>
-          </NavLink>
           <NavLink to="/products" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
             <FiBox className="nav-icon" /><span>Məhsullar</span>
           </NavLink>
-          {!isEmployee() && (
-            <NavLink to="/expenses" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
-              <FiDollarSign className="nav-icon" /><span>Xərclər</span>
-            </NavLink>
-          )}
-          
-          {!isEmployee() && (
-            <div className="mobile-nav-group">
-              <span className="mobile-nav-group-title">Hesabatlar</span>
-              <NavLink to="/reports" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
-                <FiPieChart className="nav-icon" /><span>Hesabatlar</span>
+          <NavLink to="/customers" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
+            <FiUsers className="nav-icon" /><span>Müştərilər</span>
+          </NavLink>
+          {!employee && (
+            <>
+              <NavLink to="/inventory" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
+                <FiPackage className="nav-icon" /><span>Anbar</span>
               </NavLink>
-              <NavLink to="/debtors" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
-                <FiFileText className="nav-icon" /><span>Debitorlar</span>
+              <NavLink to="/expenses" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
+                <FiDollarSign className="nav-icon" /><span>Xərclər</span>
               </NavLink>
-              <NavLink to="/creditors" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
-                <FiCreditCard className="nav-icon" /><span>Kreditorlar</span>
-              </NavLink>
-            </div>
-          )}
-          
-          <div className="mobile-nav-group">
-            <span className="mobile-nav-group-title">Parametrlər</span>
-            <NavLink to="/customers" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
-              <FiUsers className="nav-icon" /><span>Müştərilər</span>
-            </NavLink>
-            {!isEmployee() && (
-              <>
+              <div className="mobile-nav-group">
+                <span className="mobile-nav-group-title">Hesabatlar</span>
+                <NavLink to="/reports" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
+                  <FiPieChart className="nav-icon" /><span>Hesabatlar</span>
+                </NavLink>
+                <NavLink to="/debtors" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
+                  <FiFileText className="nav-icon" /><span>Debitorlar</span>
+                </NavLink>
+                <NavLink to="/creditors" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
+                  <FiCreditCard className="nav-icon" /><span>Kreditorlar</span>
+                </NavLink>
+                <NavLink to="/fakturalar" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
+                  <FiFileText className="nav-icon" /><span>Fakturalar</span>
+                </NavLink>
+              </div>
+              <div className="mobile-nav-group">
+                <span className="mobile-nav-group-title">Parametrlər</span>
+                <NavLink to="/salesmen" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
+                  <FiUserCheck className="nav-icon" /><span>Satıcılar</span>
+                </NavLink>
+                <NavLink to="/ustalar" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
+                  <FiUserCheck className="nav-icon" /><span>Ustalar</span>
+                </NavLink>
                 <NavLink to="/vendors" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
                   <FiTruck className="nav-icon" /><span>Vendorlar</span>
                 </NavLink>
@@ -285,11 +329,12 @@ const Header = () => {
                 <NavLink to="/categories" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
                   <FiGrid className="nav-icon" /><span>Kateqoriyalar</span>
                 </NavLink>
-              </>
-            )}
-          </div>
+              </div>
+            </>
+          )}
         </nav>
       )}
+
     </header>
   );
 };

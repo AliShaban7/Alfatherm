@@ -67,7 +67,7 @@ exports.delete = async (req, res, next) => {
 
 exports.getHistory = async (req, res, next) => {
   try {
-    const result = await customerService.getCustomerHistory(req.params.id, req.ownerId);
+    const result = await customerService.getCustomerHistory(req.params.id, req.user);
     
     res.status(200).json({
       success: true,

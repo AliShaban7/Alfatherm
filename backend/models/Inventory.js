@@ -55,9 +55,13 @@ inventorySchema.statics.getStockByProduct = async function(productId, ownerId) {
 };
 
 inventorySchema.statics.getStockByWarehouse = async function(warehouseId, ownerId) {
-  return await this.find({ warehouseId, ownerId })
+  // Sort after populate — sorting on a populated path at the DB layer is a no-op.
+  const rows = await this.find({ warehouseId, ownerId })
     .populate('productId', 'name sku category')
-    .sort({ 'productId.name': 1 });
+    .lean();
+  return rows.sort((a, b) =>
+    (a.productId?.name || '').localeCompare(b.productId?.name || '', 'az')
+  );
 };
 
 module.exports = mongoose.model('Inventory', inventorySchema);

@@ -1,17 +1,47 @@
 const Customer = require('../models/Customer');
 const { ROLES } = require('../config/constants');
+const { prepareCustomerIdentityFields } = require('../utils/customerIdentity');
 
 class CustomerService {
-  async create(customerData, ownerId, userId) {
-    if (customerData.voen) {
-      const existingCustomer = await Customer.findOne({ voen: customerData.voen });
-      if (existingCustomer) {
+  async assertUniqueIdentityFields(fields, excludeCustomerId = null) {
+    const baseQuery = { isActive: true };
+    if (excludeCustomerId) {
+      baseQuery._id = { $ne: excludeCustomerId };
+    }
+
+    if (fields.phone) {
+      const existing = await Customer.findOne({ ...baseQuery, phone: fields.phone });
+      if (existing) {
+        throw new Error('Bu telefon nömrəsi artıq sistemdə mövcuddur');
+      }
+    }
+
+    if (fields.voen) {
+      const existing = await Customer.findOne({ ...baseQuery, voen: fields.voen });
+      if (existing) {
         throw new Error('Bu VÖEN artıq sistemdə mövcuddur');
       }
     }
 
+    if (fields.fin) {
+      const existing = await Customer.findOne({ ...baseQuery, fin: fields.fin });
+      if (existing) {
+        throw new Error('Bu FIN artıq sistemdə mövcuddur');
+      }
+    }
+  }
+
+  async create(customerData, ownerId, userId) {
+    const prepared = prepareCustomerIdentityFields(customerData);
+
+    await this.assertUniqueIdentityFields({
+      phone: prepared.phone,
+      voen: prepared.voen,
+      fin: prepared.fin
+    });
+
     const customer = await Customer.create({
-      ...customerData,
+      ...prepared,
       ownerId,
       createdBy: userId
     });
@@ -20,11 +50,9 @@ class CustomerService {
   }
 
   async getAll(ownerId, filters = {}, user = null) {
+    // Customers are a shared pool across both owners (one physical store), so
+    // everyone sees the same customer list regardless of role.
     const query = { isActive: true };
-    
-    if (user?.role !== ROLES.EMPLOYEE && user?.role !== ROLES.SUPER_OWNER) {
-      query.ownerId = ownerId;
-    }
 
     if (filters.type) {
       query.type = filters.type;
@@ -34,7 +62,8 @@ class CustomerService {
       query.$or = [
         { name: { $regex: filters.search, $options: 'i' } },
         { phone: { $regex: filters.search, $options: 'i' } },
-        { voen: { $regex: filters.search, $options: 'i' } }
+        { voen: { $regex: filters.search, $options: 'i' } },
+        { fin: { $regex: filters.search, $options: 'i' } }
       ];
     }
 
@@ -67,7 +96,8 @@ class CustomerService {
   }
 
   async getById(id, ownerId) {
-    const customer = await Customer.findOne({ _id: id, ownerId });
+    // Shared customer pool — looked up by id only, not scoped to an owner.
+    const customer = await Customer.findOne({ _id: id, isActive: true });
 
     if (!customer) {
       throw new Error('Müştəri tapılmadı');
@@ -77,19 +107,20 @@ class CustomerService {
   }
 
   async update(id, updateData, ownerId) {
-    if (updateData.voen) {
-      const existingCustomer = await Customer.findOne({ 
-        voen: updateData.voen,
-        _id: { $ne: id }
-      });
-      if (existingCustomer) {
-        throw new Error('Bu VÖEN artıq sistemdə mövcuddur');
-      }
-    }
+    const prepared = prepareCustomerIdentityFields(updateData);
+
+    await this.assertUniqueIdentityFields(
+      {
+        phone: prepared.phone,
+        voen: prepared.voen,
+        fin: prepared.fin
+      },
+      id
+    );
 
     const customer = await Customer.findOneAndUpdate(
-      { _id: id, ownerId },
-      updateData,
+      { _id: id, isActive: true },
+      prepared,
       { new: true, runValidators: true }
     );
 
@@ -101,7 +132,7 @@ class CustomerService {
   }
 
   async delete(id, ownerId) {
-    const customer = await Customer.findOne({ _id: id, ownerId });
+    const customer = await Customer.findOne({ _id: id, isActive: true });
 
     if (!customer) {
       throw new Error('Müştəri tapılmadı');
@@ -117,21 +148,30 @@ class CustomerService {
     return { message: 'Müştəri uğurla silindi' };
   }
 
-  async getCustomerHistory(id, ownerId) {
+  async getCustomerHistory(id, user) {
     const Sale = require('../models/Sale');
     const Debtor = require('../models/Debtor');
 
-    const customer = await Customer.findOne({ _id: id, ownerId });
+    const customer = await Customer.findOne({ _id: id, isActive: true });
     if (!customer) {
       throw new Error('Müştəri tapılmadı');
     }
 
+    // The customer is shared, but each founder only sees their own transactions
+    // with that customer; super owner / employees see the full history.
+    const saleQuery = { customerId: id };
+    const debtQuery = { customerId: id };
+    if (user?.role === ROLES.OWNER) {
+      saleQuery.ownerIds = user.ownerId;
+      debtQuery.ownerId = user.ownerId;
+    }
+
     const [sales, debts] = await Promise.all([
-      Sale.find({ customerId: id, ownerId })
+      Sale.find(saleQuery)
         .sort({ date: -1 })
         .limit(50)
         .lean(),
-      Debtor.find({ customerId: id, ownerId })
+      Debtor.find(debtQuery)
         .sort({ createdAt: -1 })
         .lean()
     ]);

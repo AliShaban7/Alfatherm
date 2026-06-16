@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { FiPackage, FiArrowRight, FiPlus, FiEdit2, FiTrash2, FiDownload } from 'react-icons/fi';
-import { inventoryAPI, warehouseAPI, productAPI, vendorAPI } from '../services/api';
+import { inventoryAPI, warehouseAPI, productAPI, vendorAPI, purchaseInvoiceAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
 import { BUSINESS_OWNERS } from '../config/owners';
@@ -21,12 +21,14 @@ const Inventory = () => {
   const [selectedOwnerId, setSelectedOwnerId] = useState('');
   const { isOwner, isSuperOwner, user } = useAuth();
 
+  // A purchase invoice (faktura): one vendor + one warehouse + several product
+  // lines, with one payment status for the whole invoice.
+  const emptyEntryItem = () => ({ productId: '', quantity: 1, costPrice: '' });
   const [entryForm, setEntryForm] = useState({
-    productId: '',
-    warehouseId: '',
-    quantity: 1,
-    costPrice: '',
     vendorId: '',
+    warehouseId: '',
+    vendorInvoiceNumber: '',
+    items: [emptyEntryItem()],
     paymentStatus: 'paid',
     paidAmount: 0,
     dueDate: '',
@@ -83,45 +85,85 @@ const Inventory = () => {
     }
   };
 
+  const addEntryItem = () =>
+    setEntryForm((f) => ({ ...f, items: [...f.items, emptyEntryItem()] }));
+
+  const updateEntryItem = (index, field, value) =>
+    setEntryForm((f) => ({
+      ...f,
+      items: f.items.map((it, i) => (i === index ? { ...it, [field]: value } : it))
+    }));
+
+  const removeEntryItem = (index) =>
+    setEntryForm((f) => ({
+      ...f,
+      items: f.items.length > 1 ? f.items.filter((_, i) => i !== index) : f.items
+    }));
+
+  const resetEntryForm = () =>
+    setEntryForm({
+      vendorId: '',
+      warehouseId: '',
+      vendorInvoiceNumber: '',
+      items: [emptyEntryItem()],
+      paymentStatus: 'paid',
+      paidAmount: 0,
+      dueDate: '',
+      ownerId: ''
+    });
+
   const handleProductEntry = async (e) => {
     e.preventDefault();
+
+    const items = entryForm.items
+      .filter((it) => it.productId && (parseInt(it.quantity) || 0) > 0 && it.costPrice !== '')
+      .map((it) => ({
+        productId: it.productId,
+        quantity: parseInt(it.quantity) || 0,
+        costPrice: parseFloat(it.costPrice) || 0
+      }));
+
+    if (items.length === 0) {
+      toast.error('Ən azı bir məhsul (miqdar və maya ilə) əlavə edin');
+      return;
+    }
+
+    const payload = {
+      vendorId: entryForm.vendorId,
+      warehouseId: entryForm.warehouseId,
+      items,
+      paymentStatus: entryForm.paymentStatus
+    };
+    if (entryForm.vendorInvoiceNumber?.trim()) {
+      payload.vendorInvoiceNumber = entryForm.vendorInvoiceNumber.trim();
+    }
+    if (entryForm.paymentStatus === 'partial') {
+      payload.paidAmount = parseFloat(entryForm.paidAmount) || 0;
+    }
+    if (entryForm.paymentStatus !== 'paid' && entryForm.dueDate) {
+      payload.dueDate = entryForm.dueDate;
+    }
+    if (isSuperOwner() && selectedOwnerId) {
+      payload.ownerId = selectedOwnerId;
+    }
+
     try {
-      // Filter out empty values and add ownerId for super owner
-      const formData = { ...entryForm };
-      if (isSuperOwner() && selectedOwnerId) {
-        formData.ownerId = selectedOwnerId;
-      }
-      if (!formData.dueDate) {
-        delete formData.dueDate;
-      }
-      if (!formData.paidAmount || formData.paymentStatus === 'paid') {
-        delete formData.paidAmount;
-      }
-      
-      await inventoryAPI.productEntry(formData);
-      toast.success('Mal girişi uğurla tamamlandı');
+      await purchaseInvoiceAPI.create(payload);
+      toast.success('Mal girişi (faktura) uğurla yaradıldı');
       setShowEntryModal(false);
       setSelectedOwnerId('');
-      setEntryForm({ 
-        productId: '', 
-        warehouseId: '', 
-        quantity: 1, 
-        costPrice: '',
-        vendorId: '',
-        paymentStatus: 'paid',
-        paidAmount: 0,
-        ownerId: '',
-        dueDate: ''
-      });
+      resetEntryForm();
       fetchData();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Xəta baş verdi');
     }
   };
 
-  const getTotalAmount = () => {
-    return entryForm.quantity * (parseFloat(entryForm.costPrice) || 0);
-  };
+  const getTotalAmount = () =>
+    entryForm.items.reduce(
+      (sum, it) => sum + (parseInt(it.quantity) || 0) * (parseFloat(it.costPrice) || 0),
+      0
+    );
 
   const handleTransfer = async (e) => {
     e.preventDefault();
@@ -385,129 +427,178 @@ const Inventory = () => {
 
       {showEntryModal && (
         <div className="modal-overlay" onClick={() => setShowEntryModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '1140px', width: '95vw' }}>
             <div className="modal-header">
-              <h3 className="modal-title">Mal Girişi</h3>
+              <h3 className="modal-title">Mal Girişi (Faktura)</h3>
               <button className="modal-close" onClick={() => setShowEntryModal(false)}>&times;</button>
             </div>
             <form onSubmit={handleProductEntry}>
               <div className="modal-body">
-                <div className="form-group">
-                  <label className="form-label">Vendor *</label>
-                  <select
-                    className="form-control"
-                    value={entryForm.vendorId}
-                    onChange={(e) => setEntryForm({ ...entryForm, vendorId: e.target.value })}
-                    required
-                  >
-                    <option value="">Seçin...</option>
-                    {vendors.map(v => (
-                      <option key={v._id} value={v._id}>{v.name} {v.companyName ? `(${v.companyName})` : ''}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Məhsul *</label>
-                  <select
-                    className="form-control"
-                    value={entryForm.productId}
-                    onChange={(e) => setEntryForm({ ...entryForm, productId: e.target.value })}
-                    required
-                  >
-                    <option value="">Seçin...</option>
-                    {products.map(p => (
-                      <option key={p._id} value={p._id}>{p.name} ({p.sku})</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Anbar *</label>
-                  <select
-                    className="form-control"
-                    value={entryForm.warehouseId}
-                    onChange={(e) => setEntryForm({ ...entryForm, warehouseId: e.target.value })}
-                    required
-                  >
-                    <option value="">Seçin...</option>
-                    {warehouses.map(wh => (
-                      <option key={wh._id} value={wh._id}>{wh.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label">Miqdar *</label>
-                    <input
-                      type="number"
-                      className="form-control"
-                      value={entryForm.quantity}
-                      onChange={(e) => setEntryForm({ ...entryForm, quantity: parseInt(e.target.value) || 0 })}
-                      min="1"
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Maya Dəyəri (vahid) *</label>
-                    <input
-                      type="number"
-                      className="form-control"
-                      value={entryForm.costPrice}
-                      onChange={(e) => setEntryForm({ ...entryForm, costPrice: e.target.value })}
-                      step="0.01"
-                      required
-                    />
-                  </div>
-                </div>
-                
-                <div style={{ padding: '0.75rem', background: 'var(--gray-50)', borderRadius: 'var(--border-radius)', marginBottom: '1rem' }}>
-                  <strong>Toplam: {formatCurrency(getTotalAmount())}</strong>
-                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.5rem', alignItems: 'flex-start' }}>
+                  {/* LEFT: invoice details + payment */}
+                  <div style={{ flex: '1 1 300px', minWidth: 0 }}>
+                    <div className="form-group">
+                      <label className="form-label">Vendor *</label>
+                      <select
+                        className="form-control"
+                        value={entryForm.vendorId}
+                        onChange={(e) => setEntryForm({ ...entryForm, vendorId: e.target.value })}
+                        required
+                      >
+                        <option value="">Seçin...</option>
+                        {vendors.map(v => (
+                          <option key={v._id} value={v._id}>{v.name} {v.companyName ? `(${v.companyName})` : ''}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Anbar *</label>
+                      <select
+                        className="form-control"
+                        value={entryForm.warehouseId}
+                        onChange={(e) => setEntryForm({ ...entryForm, warehouseId: e.target.value })}
+                        required
+                      >
+                        <option value="">Seçin...</option>
+                        {warehouses.map(wh => (
+                          <option key={wh._id} value={wh._id}>{wh.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Faktura No</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        value={entryForm.vendorInvoiceNumber}
+                        onChange={(e) => setEntryForm({ ...entryForm, vendorInvoiceNumber: e.target.value })}
+                        placeholder="Vendorun faktura nömrəsi (istəyə bağlı)"
+                      />
+                    </div>
 
-                <div className="form-group">
-                  <label className="form-label">Ödəniş Statusu *</label>
-                  <select
-                    className="form-control"
-                    value={entryForm.paymentStatus}
-                    onChange={(e) => setEntryForm({ 
-                      ...entryForm, 
-                      paymentStatus: e.target.value,
-                      paidAmount: e.target.value === 'paid' ? getTotalAmount() : 0
-                    })}
-                  >
-                    <option value="paid">Ödənilib</option>
-                    <option value="partial">Qismən ödənilib</option>
-                    <option value="unpaid">Ödənilməyib (Borc)</option>
-                  </select>
+                    <div className="form-group">
+                      <label className="form-label">Ödəniş Statusu *</label>
+                      <select
+                        className="form-control"
+                        value={entryForm.paymentStatus}
+                        onChange={(e) => setEntryForm({
+                          ...entryForm,
+                          paymentStatus: e.target.value,
+                          paidAmount: e.target.value === 'paid' ? getTotalAmount() : 0
+                        })}
+                      >
+                        <option value="paid">Ödənilib</option>
+                        <option value="partial">Qismən ödənilib</option>
+                        <option value="unpaid">Ödənilməyib (Borc)</option>
+                      </select>
+                    </div>
+
+                    {entryForm.paymentStatus === 'partial' && (
+                      <div className="form-group">
+                        <label className="form-label">Ödənilmiş məbləğ *</label>
+                        <input
+                          type="number"
+                          className="form-control"
+                          value={entryForm.paidAmount}
+                          onChange={(e) => setEntryForm({ ...entryForm, paidAmount: parseFloat(e.target.value) || 0 })}
+                          step="0.01"
+                          min="0"
+                          max={getTotalAmount()}
+                          required
+                        />
+                      </div>
+                    )}
+
+                    {entryForm.paymentStatus !== 'paid' && (
+                      <div className="form-group">
+                        <label className="form-label">Ödəniş tarixi</label>
+                        <input
+                          type="date"
+                          className="form-control"
+                          value={entryForm.dueDate}
+                          onChange={(e) => setEntryForm({ ...entryForm, dueDate: e.target.value })}
+                        />
+                      </div>
+                    )}
+
+                    <div style={{ padding: '0.75rem', background: 'var(--gray-50)', borderRadius: 'var(--border-radius)' }}>
+                      <strong>Toplam: {formatCurrency(getTotalAmount())}</strong>
+                    </div>
+                  </div>
+
+                  {/* RIGHT: product lines */}
+                  <div style={{ flex: '2 1 480px', minWidth: 0 }}>
+                    <label className="form-label">Məhsullar *</label>
+                    <div style={{ border: '1px solid var(--gray-200, #e5e7eb)', borderRadius: '8px', padding: '0.5rem' }}>
+                      <table className="table" style={{ marginBottom: '0.5rem' }}>
+                        <thead>
+                          <tr>
+                            <th>Məhsul</th>
+                            <th style={{ width: '90px' }}>Miqdar</th>
+                            <th style={{ width: '120px' }}>Maya (vahid)</th>
+                            <th style={{ width: '110px' }}>Cəm</th>
+                            <th style={{ width: '40px' }}></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {entryForm.items.map((item, index) => (
+                            <tr key={index}>
+                              <td>
+                                <select
+                                  className="form-control"
+                                  value={item.productId}
+                                  onChange={(e) => updateEntryItem(index, 'productId', e.target.value)}
+                                >
+                                  <option value="">Seçin...</option>
+                                  {products.map(p => (
+                                    <option key={p._id} value={p._id}>{p.name} ({p.sku})</option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td>
+                                <input
+                                  type="number"
+                                  className="form-control"
+                                  value={item.quantity}
+                                  onChange={(e) => updateEntryItem(index, 'quantity', e.target.value)}
+                                  min="1"
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  type="number"
+                                  className="form-control"
+                                  value={item.costPrice}
+                                  onChange={(e) => updateEntryItem(index, 'costPrice', e.target.value)}
+                                  step="0.01"
+                                  min="0"
+                                />
+                              </td>
+                              <td style={{ fontWeight: 600 }}>
+                                {formatCurrency((parseInt(item.quantity) || 0) * (parseFloat(item.costPrice) || 0))}
+                              </td>
+                              <td>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm"
+                                  style={{ color: 'var(--danger)' }}
+                                  onClick={() => removeEntryItem(index)}
+                                  disabled={entryForm.items.length === 1}
+                                  title="Sil"
+                                >
+                                  <FiTrash2 />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <button type="button" className="btn btn-sm btn-secondary" onClick={addEntryItem}>
+                        <FiPlus /> Məhsul əlavə et
+                      </button>
+                    </div>
+                  </div>
                 </div>
-
-                {entryForm.paymentStatus === 'partial' && (
-                  <div className="form-group">
-                    <label className="form-label">Ödənilmiş məbləğ *</label>
-                    <input
-                      type="number"
-                      className="form-control"
-                      value={entryForm.paidAmount}
-                      onChange={(e) => setEntryForm({ ...entryForm, paidAmount: parseFloat(e.target.value) || 0 })}
-                      step="0.01"
-                      min="0"
-                      max={getTotalAmount()}
-                      required
-                    />
-                  </div>
-                )}
-
-                {entryForm.paymentStatus !== 'paid' && (
-                  <div className="form-group">
-                    <label className="form-label">Ödəniş tarixi</label>
-                    <input
-                      type="date"
-                      className="form-control"
-                      value={entryForm.dueDate}
-                      onChange={(e) => setEntryForm({ ...entryForm, dueDate: e.target.value })}
-                    />
-                  </div>
-                )}
-          
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-secondary" onClick={() => setShowEntryModal(false)}>

@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import api from '../services/api';
+import api, { clearApiCache } from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -33,7 +33,8 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('token', token);
     localStorage.setItem('user', JSON.stringify(userData));
     api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-    
+    clearApiCache();
+
     setUser(userData);
     return userData;
   };
@@ -42,6 +43,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     delete api.defaults.headers.common['Authorization'];
+    clearApiCache();
     setUser(null);
   };
 
@@ -57,6 +59,8 @@ export const AuthProvider = ({ children }) => {
     return user?.role === 'EMPLOYEE';
   };
 
+  const getHomePath = () => (user?.role === 'EMPLOYEE' ? '/sales' : '/');
+
   const value = {
     user,
     loading,
@@ -64,7 +68,8 @@ export const AuthProvider = ({ children }) => {
     logout,
     isOwner,
     isSuperOwner,
-    isEmployee
+    isEmployee,
+    getHomePath
   };
 
   return (

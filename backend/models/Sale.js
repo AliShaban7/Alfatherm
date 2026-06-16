@@ -1,5 +1,24 @@
 const mongoose = require('mongoose');
-const { PAYMENT_TYPES, PAYMENT_METHODS } = require('../config/constants');
+const Counter = require('./Counter');
+const { PAYMENT_TYPES, PAYMENT_METHODS, SALE_EXPENSE_CATEGORIES } = require('../config/constants');
+
+// A sale-related expense paid on the spot (courier, packaging, etc.). Split
+// between owners by item share into Expense docs; this is the as-entered record.
+const saleExpenseSchema = new mongoose.Schema({
+  category: {
+    type: String,
+    enum: SALE_EXPENSE_CATEGORIES,
+    required: true
+  },
+  amount: {
+    type: Number,
+    required: true,
+    min: [0, 'Məbləğ mənfi ola bilməz']
+  },
+  note: {
+    type: String
+  }
+}, { _id: false });
 
 const saleItemSchema = new mongoose.Schema({
   productId: {
@@ -29,6 +48,12 @@ const saleItemSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
+  // Which owner this specific line item belongs to (its product's owner).
+  // Lets a single sale that mixes owners' products attribute each line correctly.
+  productOwnerId: {
+    type: String,
+    required: true
+  },
   discount: {
     type: Number,
     default: 0
@@ -51,12 +76,23 @@ const saleSchema = new mongoose.Schema({
   },
   
   // Owner isolation - CRITICAL
+  // Primary owner = the customer's owner. Anchors the receipt, customer link,
+  // and (for a single-owner sale) all reporting.
   ownerId: {
     type: String,
     required: true,
     index: true
   },
-  
+
+  // Distinct set of product owners represented in `items`. For a single-owner
+  // sale this equals [ownerId]. For a mixed sale it holds every owner whose
+  // goods were sold, so each owner's queries can find the sale (multikey index).
+  ownerIds: {
+    type: [String],
+    index: true,
+    default: undefined
+  },
+
   // User who made the sale
   userId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -83,6 +119,21 @@ const saleSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Customer',
     required: true
+  },
+
+  // Salesman who made the sale (for bonus tracking). The login account can't
+  // identify them — several people share each account — so it's chosen at
+  // checkout. Required on create is enforced in the validator/service, not here,
+  // so saving legacy sales (e.g. cancel) doesn't fail.
+  salespersonId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Salesperson',
+    index: true
+  },
+  // Snapshot of the name at sale time, so reports/receipts stay correct even if
+  // the salesman is later renamed or deactivated.
+  salespersonName: {
+    type: String
   },
   
   // Items
@@ -117,7 +168,38 @@ const saleSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
-  
+
+  // Referral commission for the usta who sent the customer. One usta per sale.
+  // Accrued as a payable (split per owner into Commission records); the amount
+  // is also part of totalCosts so net profit reflects it at sale time.
+  commission: {
+    ustaId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Usta'
+    },
+    ustaName: { type: String },
+    amount: { type: Number, default: 0, min: 0 }
+  },
+
+  // On-the-spot sale expenses (courier, packaging, ...). Split per owner into
+  // Expense docs at sale time; kept here as the as-entered breakdown.
+  saleExpenses: {
+    type: [saleExpenseSchema],
+    default: []
+  },
+
+  // commission.amount + Σ saleExpenses.amount
+  totalCosts: {
+    type: Number,
+    default: 0
+  },
+
+  // profit (gross goods margin) − totalCosts. Whole-sale net; an owner viewing a
+  // mixed sale sees their sliced net (see sale.service.sliceSaleForOwner).
+  netProfit: {
+    type: Number
+  },
+
   // Payment
   paymentType: {
     type: String,
@@ -167,9 +249,12 @@ const saleSchema = new mongoose.Schema({
   timestamps: true
 });
 
+saleSchema.index({ date: -1 }); // global sales list sort (employee / super owner)
 saleSchema.index({ ownerId: 1, date: -1 });
 saleSchema.index({ ownerId: 1, branchId: 1, date: -1 });
 saleSchema.index({ ownerId: 1, customerId: 1 });
+saleSchema.index({ salespersonId: 1, date: -1 });
+saleSchema.index({ ownerIds: 1, date: -1 });
 
 saleSchema.pre('save', function(next) {
   if (this.paymentType === PAYMENT_TYPES.CREDIT) {
@@ -182,17 +267,12 @@ saleSchema.statics.generateSaleNumber = async function(branchCode) {
   const today = new Date();
   const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
   const prefix = `${branchCode || 'SAL'}-${dateStr}`;
-  
-  const lastSale = await this.findOne({
-    saleNumber: new RegExp(`^${prefix}`)
-  }).sort({ saleNumber: -1 });
-  
-  let sequence = 1;
-  if (lastSale) {
-    const lastNum = parseInt(lastSale.saleNumber.split('-').pop());
-    sequence = lastNum + 1;
-  }
-  
+
+  // Atomic per-prefix counter: safe for simultaneous sales across stores.
+  // (Done outside the sale's transaction so a rare abort just leaves a gap in
+  // the numbering rather than risking a duplicate number.)
+  const sequence = await Counter.next(prefix);
+
   return `${prefix}-${sequence.toString().padStart(4, '0')}`;
 };
 

@@ -14,5 +14,8 @@ router.use('/reports', require('./report.routes'));
 router.use('/branches', require('./branch.routes'));
 router.use('/warehouses', require('./warehouse.routes'));
 router.use('/categories', require('./category.routes'));
+router.use('/salespersons', require('./salesperson.routes'));
+router.use('/ustas', require('./usta.routes'));
+router.use('/purchase-invoices', require('./purchaseInvoice.routes'));
 
 module.exports = router;
