@@ -4,7 +4,10 @@ import { creditorAPI, vendorAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { format } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
+import { BUSINESS_OWNERS } from '../config/owners';
 import * as XLSX from 'xlsx';
+
+const ownerName = (id) => BUSINESS_OWNERS.find((o) => o.id === id)?.name || id || '—';
 
 const STATUS_LABELS = {
   pending: { label: 'Gözləyir', class: 'badge-warning' },
@@ -20,10 +23,11 @@ const Creditors = () => {
   const [loading, setLoading] = useState(true);
   const [vendorsLoading, setVendorsLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
+  const [ownerFilter, setOwnerFilter] = useState(''); // director: narrow to one owner
   const [showModal, setShowModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedCreditor, setSelectedCreditor] = useState(null);
-  const { isOwner } = useAuth();
+  const { isOwner, isSuperOwner } = useAuth();
 
   const [formData, setFormData] = useState({
     vendorId: '',
@@ -49,7 +53,7 @@ const Creditors = () => {
     try {
       setLoading(true);
       const [creditorsRes, summaryRes] = await Promise.all([
-        creditorAPI.getAll({ status: statusFilter }),
+        creditorAPI.getAll({ status: statusFilter, ownerId: ownerFilter }),
         creditorAPI.getSummary()
       ]);
       setCreditors(creditorsRes.data.creditors);
@@ -59,7 +63,7 @@ const Creditors = () => {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter]);
+  }, [statusFilter, ownerFilter]);
 
   const fetchVendors = useCallback(async () => {
     if (vendors.length > 0) return;
@@ -239,7 +243,7 @@ const Creditors = () => {
       </div>
 
       <div className="card">
-        <div style={{ marginBottom: '1rem' }}>
+        <div style={{ marginBottom: '1rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
           <select
             className="form-control"
             style={{ width: '200px' }}
@@ -252,6 +256,19 @@ const Creditors = () => {
             <option value="overdue">Gecikmiş</option>
             <option value="paid">Ödənilib</option>
           </select>
+          {isSuperOwner() && (
+            <select
+              className="form-control"
+              style={{ width: '200px' }}
+              value={ownerFilter}
+              onChange={(e) => setOwnerFilter(e.target.value)}
+            >
+              <option value="">Bütün sahiblər</option>
+              {BUSINESS_OWNERS.map((o) => (
+                <option key={o.id} value={o.id}>{o.name}</option>
+              ))}
+            </select>
+          )}
         </div>
 
         {loading ? (
@@ -268,6 +285,7 @@ const Creditors = () => {
               <thead>
                 <tr>
                   <th>Vendor</th>
+                  {isSuperOwner() && <th>Sahib</th>}
                   <th>Təsvir</th>
                   <th>Toplam</th>
                   <th>Ödənilib</th>
@@ -288,6 +306,7 @@ const Creditors = () => {
                         </div>
                       )}
                     </td>
+                    {isSuperOwner() && <td>{ownerName(creditor.ownerId)}</td>}
                     <td>{creditor.description}</td>
                     <td>{formatCurrency(creditor.totalAmount)}</td>
                     <td style={{ color: 'var(--success)' }}>{formatCurrency(creditor.paidAmount)}</td>

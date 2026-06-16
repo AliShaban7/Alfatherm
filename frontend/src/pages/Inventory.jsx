@@ -447,7 +447,8 @@ const Inventory = () => {
                       >
                         <option value="">Seçin...</option>
                         {vendors.map(v => (
-                          <option key={v._id} value={v._id}>{v.name} {v.companyName ? `(${v.companyName})` : ''}</option>
+                          <option key={v._id} value={v._id}>{v.companyName ? v.companyName : ''}{v.name ? ` (${v.name})` : ''}</option>
+                     
                         ))}
                       </select>
                     </div>
@@ -535,7 +536,7 @@ const Inventory = () => {
                           <tr>
                             <th>Məhsul</th>
                             <th style={{ width: '90px' }}>Miqdar</th>
-                            <th style={{ width: '120px' }}>Maya (vahid)</th>
+                            <th style={{ width: '120px' }}>Maya dəyəri</th>
                             <th style={{ width: '110px' }}>Cəm</th>
                             <th style={{ width: '40px' }}></th>
                           </tr>

@@ -110,7 +110,7 @@ export const buildInvoiceHtml = (invoice) => {
             <th class="c-no">#</th>
             <th>Məhsul</th>
             <th class="c-num">Miqdar</th>
-            <th class="c-num">Maya (vahid)</th>
+            <th class="c-num">Maya dəyəri</th>
             <th class="c-num">Cəm</th>
           </tr>
         </thead>

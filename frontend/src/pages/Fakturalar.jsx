@@ -173,7 +173,7 @@ const Fakturalar = () => {
                   <tr>
                     <th>Məhsul</th>
                     <th>Miqdar</th>
-                    <th>Maya (vahid)</th>
+                    <th>Maya dəyəri</th>
                     <th>Cəm</th>
                   </tr>
                 </thead>
