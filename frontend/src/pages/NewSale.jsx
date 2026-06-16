@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FiPlus, FiTrash2, FiSearch } from 'react-icons/fi';
 import CustomerFormModal from '../components/customers/CustomerFormModal';
-import { saleAPI, productAPI, customerAPI, warehouseAPI, salespersonAPI } from '../services/api';
+import { saleAPI, productAPI, customerAPI, warehouseAPI, salespersonAPI, ustaAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
 import { format } from 'date-fns';
@@ -34,6 +34,17 @@ const NewSale = () => {
   // Checkout confirmation modal (salesman selection for bonus tracking)
   const [showConfirm, setShowConfirm] = useState(false);
   const [salespersonId, setSalespersonId] = useState('');
+
+  // Per-sale costs captured at checkout (split between owners on the backend).
+  const [ustas, setUstas] = useState([]);
+  const [commission, setCommission] = useState({ ustaId: '', amount: '' });
+  const [saleExpenses, setSaleExpenses] = useState([]); // [{ category, amount }]
+
+  const SALE_EXPENSE_OPTIONS = [
+    { value: 'courier', label: 'Kuryer' },
+    { value: 'packaging', label: 'Qablaşdırma' },
+    { value: 'other', label: 'Digər' }
+  ];
 
   const [formData, setFormData] = useState({
     customerId: '',
@@ -88,16 +99,18 @@ const NewSale = () => {
 
   const fetchInitialData = async () => {
     try {
-      const [productsRes, customersRes, warehousesRes, salespersonsRes] = await Promise.all([
+      const [productsRes, customersRes, warehousesRes, salespersonsRes, ustasRes] = await Promise.all([
         productAPI.getAll({ limit: 1000 }),
         customerAPI.getAll({ limit: 1000 }),
         warehouseAPI.getAll(),
-        salespersonAPI.getAll()
+        salespersonAPI.getAll(),
+        ustaAPI.getAll()
       ]);
       setProducts(productsRes.data.products);
       setCustomers(customersRes.data.customers);
       setWarehouses(warehousesRes.data.data);
       setSalespersons(salespersonsRes.data.data || []);
+      setUstas(ustasRes.data.data || []);
     } catch (error) {
       toast.error('Məlumatları yükləmək mümkün olmadı');
     }
@@ -176,6 +189,26 @@ const NewSale = () => {
     }, 0);
   };
 
+  const addExpenseRow = () =>
+    setSaleExpenses((rows) => [...rows, { category: 'courier', amount: '' }]);
+
+  const updateExpenseRow = (index, field, value) =>
+    setSaleExpenses((rows) =>
+      rows.map((row, i) => (i === index ? { ...row, [field]: value } : row))
+    );
+
+  const removeExpenseRow = (index) =>
+    setSaleExpenses((rows) => rows.filter((_, i) => i !== index));
+
+  const calculateCostsTotal = () => {
+    const commissionAmt = commission.amount === '' ? 0 : parseFloat(commission.amount) || 0;
+    const expensesAmt = saleExpenses.reduce(
+      (sum, e) => sum + (e.amount === '' ? 0 : parseFloat(e.amount) || 0),
+      0
+    );
+    return commissionAmt + expensesAmt;
+  };
+
   const handlePaymentSelectionChange = (paymentSelection) => {
     setFormData((prev) => ({
       ...prev,
@@ -234,6 +267,26 @@ const NewSale = () => {
       return;
     }
 
+    // Commission: amount and usta go together.
+    const commissionAmount = commission.amount === '' ? 0 : parseFloat(commission.amount) || 0;
+    if (commissionAmount > 0 && !commission.ustaId) {
+      toast.error('Komissiya üçün usta seçin');
+      return;
+    }
+    if (commission.ustaId && commissionAmount <= 0) {
+      toast.error('Usta üçün komissiya məbləği daxil edin');
+      return;
+    }
+
+    // Each expense row must be complete (category + amount > 0) before submitting.
+    for (const e of saleExpenses) {
+      const amt = e.amount === '' ? 0 : parseFloat(e.amount) || 0;
+      if (!e.category || amt <= 0) {
+        toast.error('Hər xərc sətri üçün kateqoriya və məbləğ (>0) daxil edin');
+        return;
+      }
+    }
+
     setLoading(true);
 
     const { paymentType, paymentMethod } = toApiPayment(
@@ -256,6 +309,17 @@ const NewSale = () => {
 
     if (formData.note?.trim()) {
       payload.note = formData.note.trim();
+    }
+
+    if (commissionAmount > 0) {
+      payload.commission = { ustaId: commission.ustaId, amount: commissionAmount };
+    }
+
+    if (saleExpenses.length > 0) {
+      payload.saleExpenses = saleExpenses.map((e) => ({
+        category: e.category,
+        amount: parseFloat(e.amount) || 0
+      }));
     }
 
     if (paymentMethod) {
@@ -714,6 +778,81 @@ const NewSale = () => {
                 </div>
               )}
             </div>
+
+            {/* Per-sale costs: referral commission + on-the-spot expenses. */}
+            <div className="form-group">
+              <label className="form-label">Usta komissiyası</label>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <select
+                  className="form-control"
+                  style={{ flex: 2 }}
+                  value={commission.ustaId}
+                  onChange={(e) => setCommission({ ...commission, ustaId: e.target.value })}
+                >
+                  <option value="">Usta (yoxdursa boş)</option>
+                  {ustas.map((u) => (
+                    <option key={u._id} value={u._id}>{u.name}</option>
+                  ))}
+                </select>
+                <input
+                  type="number"
+                  className="form-control"
+                  style={{ flex: 1 }}
+                  placeholder="Məbləğ"
+                  step="0.01"
+                  min="0"
+                  value={commission.amount}
+                  onChange={(e) => setCommission({ ...commission, amount: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Satış xərcləri</label>
+              {saleExpenses.map((row, index) => (
+                <div key={index} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                  <select
+                    className="form-control"
+                    style={{ flex: 2 }}
+                    value={row.category}
+                    onChange={(e) => updateExpenseRow(index, 'category', e.target.value)}
+                  >
+                    {SALE_EXPENSE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    className="form-control"
+                    style={{ flex: 1 }}
+                    placeholder="Məbləğ"
+                    step="0.01"
+                    min="0"
+                    value={row.amount}
+                    onChange={(e) => updateExpenseRow(index, 'amount', e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    style={{ color: 'var(--danger)' }}
+                    onClick={() => removeExpenseRow(index)}
+                    title="Sil"
+                  >
+                    <FiTrash2 />
+                  </button>
+                </div>
+              ))}
+              <button type="button" className="btn btn-sm btn-secondary" onClick={addExpenseRow}>
+                <FiPlus /> Xərc əlavə et
+              </button>
+            </div>
+
+            {calculateCostsTotal() > 0 && (
+              <div className="new-sale-totals-row" style={{ color: 'var(--gray-600)', marginBottom: '0.5rem' }}>
+                <span>Xərclər cəmi</span>
+                <span>{formatCurrency(calculateCostsTotal())}</span>
+              </div>
+            )}
 
             <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.25rem' }}>
               <button

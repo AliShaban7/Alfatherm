@@ -4,6 +4,7 @@ import { productAPI, categoryAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
 import { BUSINESS_OWNERS } from '../config/owners';
+import ComboBox from '../components/common/ComboBox';
 import * as XLSX from 'xlsx';
 
 const UNITS = [
@@ -20,6 +21,8 @@ const UNITS = [
 const Products = () => {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
+  // Existing distinct values for the pick-or-add-new fields.
+  const [options, setOptions] = useState({ brand: [], manufacturer: [], country: [], color: [] });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
@@ -46,12 +49,25 @@ const Products = () => {
     fetchProducts();
   }, [category]);
 
+  useEffect(() => {
+    fetchOptions();
+  }, []);
+
   const fetchCategories = async () => {
     try {
       const response = await categoryAPI.getAll({ type: 'product' });
       setCategories(response.data.data);
     } catch (error) {
       console.error('Kateqoriyaları yükləmək mümkün olmadı');
+    }
+  };
+
+  const fetchOptions = async () => {
+    try {
+      const response = await productAPI.getOptions();
+      setOptions(response.data.data || { brand: [], manufacturer: [], country: [], color: [] });
+    } catch (error) {
+      console.error('Seçimləri yükləmək mümkün olmadı');
     }
   };
 
@@ -93,6 +109,7 @@ const Products = () => {
       setShowModal(false);
       resetForm();
       fetchProducts();
+      fetchOptions(); // pick up any newly-added brand/manufacturer/country/color
     } catch (error) {
       toast.error(error.response?.data?.message || 'Xəta baş verdi');
     }
@@ -364,40 +381,40 @@ const Products = () => {
                 <div className="form-row">
                   <div className="form-group">
                     <label className="form-label">Brend</label>
-                    <input
-                      type="text"
-                      className="form-control"
+                    <ComboBox
                       value={formData.brand}
-                      onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
+                      onChange={(v) => setFormData({ ...formData, brand: v })}
+                      options={options.brand}
+                      placeholder="Siyahıdan seçin və ya əlavə edin"
                     />
                   </div>
                   <div className="form-group">
                     <label className="form-label">İstehsalçı</label>
-                    <input
-                      type="text"
-                      className="form-control"
+                    <ComboBox
                       value={formData.manufacturer}
-                      onChange={(e) => setFormData({ ...formData, manufacturer: e.target.value })}
+                      onChange={(v) => setFormData({ ...formData, manufacturer: v })}
+                      options={options.manufacturer}
+                      placeholder="Siyahıdan seçin və ya əlavə edin"
                     />
                   </div>
                 </div>
                 <div className="form-row">
                   <div className="form-group">
                     <label className="form-label">Ölkə</label>
-                    <input
-                      type="text"
-                      className="form-control"
+                    <ComboBox
                       value={formData.country}
-                      onChange={(e) => setFormData({ ...formData, country: e.target.value })}
+                      onChange={(v) => setFormData({ ...formData, country: v })}
+                      options={options.country}
+                      placeholder="Siyahıdan seçin və ya əlavə edin"
                     />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Rəng</label>
-                    <input
-                      type="text"
-                      className="form-control"
+                    <ComboBox
                       value={formData.color}
-                      onChange={(e) => setFormData({ ...formData, color: e.target.value })}
+                      onChange={(v) => setFormData({ ...formData, color: v })}
+                      options={options.color}
+                      placeholder="Siyahıdan seçin və ya əlavə edin"
                     />
                   </div>
                 </div>

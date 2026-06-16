@@ -82,9 +82,23 @@ const Sales = () => {
   };
 
   const handlePrint = async (sale) => {
+    // Step 1: load the full sale. Surface the server's actual message so a real
+    // problem (permission, not-found, server error) isn't hidden behind a
+    // generic "couldn't load" toast.
+    let full;
     try {
       const response = await saleAPI.getById(sale._id);
-      const full = response.data.data;
+      full = response.data?.data;
+      if (!full) throw new Error('Boş cavab');
+    } catch (error) {
+      console.error('Çek məlumatı yüklənmədi:', error);
+      toast.error(error.response?.data?.message || 'Çek məlumatını yükləmək mümkün olmadı');
+      return;
+    }
+
+    // Step 2: print. A failure here is almost always a blocked popup, not a data
+    // problem — so it gets its own message and never looks like a load failure.
+    try {
       printSaleReceipt(full, {
         customerName: full.customerId?.name || '-',
         warehouseName: full.warehouseId?.name || null,
@@ -93,8 +107,9 @@ const Sales = () => {
         formatDate: (d) => format(new Date(d), 'dd.MM.yyyy HH:mm'),
         paymentLabel: formatPaymentLabel(full.paymentType, full.paymentMethod)
       });
-    } catch {
-      toast.error('Çek məlumatını yükləmək mümkün olmadı');
+    } catch (error) {
+      console.error('Çek çap edilmədi:', error);
+      toast.warn('Qəbz çap edilə bilmədi (brauzer popup-u bloklamış ola bilər)');
     }
   };
 
@@ -188,9 +203,34 @@ const Sales = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {sales.map((sale) => (
-                    <tr key={sale._id}>
-                      <td><strong>{sale.saleNumber}</strong></td>
+                  {sales.map((sale) => {
+                    const voided = sale.status === 'cancelled' || sale.status === 'returned';
+                    return (
+                    <tr
+                      key={sale._id}
+                      style={voided ? { background: 'rgba(220, 38, 38, 0.07)' } : undefined}
+                    >
+                      <td>
+                        <strong style={voided ? { textDecoration: 'line-through', color: 'var(--danger)' } : undefined}>
+                          {sale.saleNumber}
+                        </strong>
+                        {voided && (
+                          <span
+                            style={{
+                              marginLeft: '0.5rem',
+                              fontSize: '0.7rem',
+                              fontWeight: 600,
+                              color: 'var(--danger)',
+                              border: '1px solid var(--danger)',
+                              borderRadius: '4px',
+                              padding: '1px 6px',
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            {sale.status === 'cancelled' ? 'Ləğv edilib' : 'Qaytarılıb'}
+                          </span>
+                        )}
+                      </td>
                       <td>{format(new Date(sale.date), 'dd.MM.yyyy HH:mm')}</td>
                       <td>{sale.customerId?.name || '-'}</td>
                       <td>{sale.warehouseId?.name || sale.branchId?.name || '-'}</td>
@@ -223,7 +263,8 @@ const Sales = () => {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

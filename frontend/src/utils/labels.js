@@ -8,6 +8,9 @@ export const EXPENSE_CATEGORIES = [
   { value: 'utilities', label: 'Kommunal' },
   { value: 'maintenance', label: 'Təmir' },
   { value: 'marketing', label: 'Marketinq' },
+  { value: 'courier', label: 'Kuryer' },
+  { value: 'packaging', label: 'Qablaşdırma' },
+  { value: 'commission', label: 'Usta komissiyası' },
   { value: 'other', label: 'Digər' }
 ];
 

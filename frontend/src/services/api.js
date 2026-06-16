@@ -54,8 +54,19 @@ api.interceptors.request.use(
 
 api.interceptors.response.use(
   (response) => {
+    const method = response.config.method;
+
+    // Any successful mutation (POST/PUT/PATCH/DELETE) can change data the cached
+    // GETs reflect — a payment, a sale reversal, a stock entry, etc. Invalidate
+    // the whole cache so the page's immediate refetch returns fresh data instead
+    // of a stale 30s-cached list (which is why a manual refresh was needed).
+    if (method && method !== 'get') {
+      cache.clear();
+      return response;
+    }
+
     // Cache successful GET responses (skip auth routes)
-    if (response.config.method === 'get' && !shouldSkipCache(response.config.url)) {
+    if (method === 'get' && !shouldSkipCache(response.config.url)) {
       const cacheKey = getCacheKey(response.config);
       cache.set(cacheKey, {
         data: response.data,
@@ -77,15 +88,6 @@ api.interceptors.response.use(
 // Export function to clear cache (call after mutations)
 export const clearApiCache = () => cache.clear();
 
-export const clearSalesCache = () => {
-  // Cache keys are `<sessionKey>:<method>:<url>:<params>`, so match the
-  // `:get:/sales` segment rather than the start of the key.
-  for (const key of cache.keys()) {
-    if (key.includes(':get:/sales')) {
-      cache.delete(key);
-    }
-  }
-};
 
 export const authAPI = {
   login: (data) => api.post('/auth/login', data),
@@ -96,6 +98,7 @@ export const authAPI = {
 
 export const productAPI = {
   getAll: (params) => api.get('/products', { params }),
+  getOptions: () => api.get('/products/options'),
   getById: (id) => api.get(`/products/${id}`),
   getWithStock: (id) => api.get(`/products/${id}/stock`),
   create: (data) => api.post('/products', data).then(r => { clearApiCache(); return r; }),
@@ -116,10 +119,19 @@ export const inventoryAPI = {
 export const saleAPI = {
   getAll: (params) => api.get('/sales', { params }),
   getById: (id) => api.get(`/sales/${id}`),
-  create: (data) => api.post('/sales', data).then((r) => { clearSalesCache(); return r; }),
-  cancel: (id) => api.put(`/sales/${id}/cancel`).then((r) => { clearSalesCache(); return r; }),
+  // A sale touches more than the sales list: it changes warehouse stock,
+  // debtors (credit sales), customer totals, and the dashboard/report figures.
+  // Clearing only the sales cache left those stale for up to 30s, so clear all.
+  create: (data) => api.post('/sales', data).then((r) => { clearApiCache(); return r; }),
+  cancel: (id) => api.put(`/sales/${id}/cancel`).then((r) => { clearApiCache(); return r; }),
   getDailySummary: (params) => api.get('/sales/daily-summary', { params }),
   getWarehouseStock: (warehouseId) => api.get(`/sales/warehouse-stock/${warehouseId}`)
+};
+
+export const purchaseInvoiceAPI = {
+  getAll: (params) => api.get('/purchase-invoices', { params }),
+  getById: (id) => api.get(`/purchase-invoices/${id}`),
+  create: (data) => api.post('/purchase-invoices', data).then((r) => { clearApiCache(); return r; })
 };
 
 export const customerAPI = {
@@ -182,6 +194,16 @@ export const salespersonAPI = {
   create: (data) => api.post('/salespersons', data).then((r) => { clearApiCache(); return r; }),
   update: (id, data) => api.put(`/salespersons/${id}`, data).then((r) => { clearApiCache(); return r; }),
   delete: (id) => api.delete(`/salespersons/${id}`).then((r) => { clearApiCache(); return r; })
+};
+
+export const ustaAPI = {
+  getAll: (params) => api.get('/ustas', { params }),
+  getBalances: () => api.get('/ustas/balances'),
+  getById: (id) => api.get(`/ustas/${id}`),
+  create: (data) => api.post('/ustas', data).then((r) => { clearApiCache(); return r; }),
+  update: (id, data) => api.put(`/ustas/${id}`, data).then((r) => { clearApiCache(); return r; }),
+  delete: (id) => api.delete(`/ustas/${id}`).then((r) => { clearApiCache(); return r; }),
+  pay: (id, data) => api.post(`/ustas/${id}/pay`, data).then((r) => { clearApiCache(); return r; })
 };
 
 export const branchAPI = {

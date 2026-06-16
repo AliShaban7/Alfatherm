@@ -25,9 +25,9 @@ export const buildReceiptHtml = (sale, options = {}) => {
     .map((item) => {
       const qty = item.quantity || 1;
       const discount = item.discount || 0;
-      const lineTotal = item.total != null ? item.total : qty * item.unitPrice;
-      const unitPrice =
-        discount > 0 ? item.unitPrice + discount / qty : item.unitPrice;
+      const baseUnit = item.unitPrice || 0;
+      const lineTotal = item.total != null ? item.total : qty * baseUnit;
+      const unitPrice = discount > 0 ? baseUnit + discount / qty : baseUnit;
       const name = item.productName || item.productId?.name || '-';
 
       return `
@@ -35,7 +35,7 @@ export const buildReceiptHtml = (sale, options = {}) => {
           <td class="col-name">${name}</td>
           <td class="col-qty">${qty}</td>
           <td class="col-price">${unitPrice.toFixed(2)}</td>
-          <td class="col-total">${lineTotal.toFixed(2)}</td>
+          <td class="col-total">${(lineTotal || 0).toFixed(2)}</td>
         </tr>
       `;
     })
@@ -155,7 +155,7 @@ export const buildReceiptHtml = (sale, options = {}) => {
         }
         <div class="summary-row total">
           <span>TOPLAM:</span>
-          <span>${sale.totalAmount.toFixed(2)} AZN</span>
+          <span>${(sale.totalAmount || 0).toFixed(2)} AZN</span>
         </div>
         ${
           sale.paymentType === 'credit'

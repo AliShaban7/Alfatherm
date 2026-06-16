@@ -21,9 +21,11 @@ const menuItems = [
   { path: '/products', icon: FiBox, label: 'Məhsullar' },
   { path: '/customers', icon: FiUsers, label: 'Müştərilər' },
   { path: '/salesmen', icon: FiUserCheck, label: 'Satıcılar' },
+  { path: '/ustalar', icon: FiUserCheck, label: 'Ustalar' },
   { path: '/debtors', icon: FiFileText, label: 'Debitorlar' },
   { path: '/vendors', icon: FiTruck, label: 'Vendorlar' },
   { path: '/creditors', icon: FiCreditCard, label: 'Kreditorlar' },
+  { path: '/fakturalar', icon: FiFileText, label: 'Fakturalar' },
   { path: '/expenses', icon: FiDollarSign, label: 'Xərclər' },
   { path: '/reports', icon: FiPieChart, label: 'Hesabatlar' }
 ];

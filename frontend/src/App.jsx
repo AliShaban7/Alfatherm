@@ -20,6 +20,8 @@ const Reports = lazy(() => import('./pages/Reports'));
 const Warehouses = lazy(() => import('./pages/Warehouses'));
 const Categories = lazy(() => import('./pages/Categories'));
 const Salesmen = lazy(() => import('./pages/Salesmen'));
+const Ustalar = lazy(() => import('./pages/Ustalar'));
+const Fakturalar = lazy(() => import('./pages/Fakturalar'));
 
 const PageLoader = () => (
   <div className="loading" style={{ height: '60vh' }}>
@@ -66,6 +68,8 @@ function App() {
                   <Route path="/warehouses" element={<OwnerRoute><Warehouses /></OwnerRoute>} />
                   <Route path="/categories" element={<OwnerRoute><Categories /></OwnerRoute>} />
                   <Route path="/salesmen" element={<OwnerRoute><Salesmen /></OwnerRoute>} />
+                  <Route path="/ustalar" element={<OwnerRoute><Ustalar /></OwnerRoute>} />
+                  <Route path="/fakturalar" element={<OwnerRoute><Fakturalar /></OwnerRoute>} />
                 </Routes>
               </Suspense>
             </Layout>
