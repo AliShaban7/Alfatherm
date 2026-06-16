@@ -204,15 +204,12 @@ const Warehouses = () => {
                   />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Anbar Kodu *</label>
+                  <label className="form-label">Anbar Kodu</label>
                   <input
                     type="text"
                     className="form-control"
-                    value={formData.code}
-                    onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
-                    placeholder="Məs: WH-01"
-                    required
-                    disabled={editingWarehouse}
+                    value={editingWarehouse ? formData.code : 'Avtomatik yaradılacaq'}
+                    disabled
                   />
                 </div>
                 <div className="form-group">
