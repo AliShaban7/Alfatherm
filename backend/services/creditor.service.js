@@ -14,7 +14,7 @@ class CreditorService {
       throw new Error('Düzgün borc məbləği daxil edin');
     }
 
-    const vendor = await Vendor.findOne({ _id: vendorId, ownerId });
+    const vendor = await Vendor.findById(vendorId); // vendors are shared across owners
     if (!vendor) {
       throw new Error('Vendor tapılmadı');
     }

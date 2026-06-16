@@ -1,27 +1,49 @@
 const Warehouse = require('../models/Warehouse');
 const Inventory = require('../models/Inventory');
+const Branch = require('../models/Branch');
+const Counter = require('../models/Counter');
 const { WAREHOUSE_TYPES } = require('../config/constants');
 
 class WarehouseService {
+  // Next free code of the form PREFIX-NNN, skipping any already taken.
+  async _generateCode(Model, prefix) {
+    let code;
+    do {
+      const seq = await Counter.next(`code:${prefix}`);
+      code = `${prefix}-${String(seq).padStart(3, '0')}`;
+    } while (await Model.exists({ code }));
+    return code;
+  }
+
   async create(warehouseData) {
-    const existingWarehouse = await Warehouse.findOne({ code: warehouseData.code.toUpperCase() });
-    if (existingWarehouse) {
+    const data = { ...warehouseData };
+
+    // Auto-generate the warehouse code if none was supplied.
+    data.code = data.code ? data.code.toUpperCase() : await this._generateCode(Warehouse, 'WH');
+
+    if (await Warehouse.findOne({ code: data.code })) {
       throw new Error('Bu kod ilə anbar artıq mövcuddur');
     }
 
-    if (warehouseData.type === WAREHOUSE_TYPES.MAIN) {
-      const existingMain = await Warehouse.findOne({ type: WAREHOUSE_TYPES.MAIN });
-      if (existingMain) {
+    if (data.type === WAREHOUSE_TYPES.MAIN) {
+      if (await Warehouse.findOne({ type: WAREHOUSE_TYPES.MAIN })) {
         throw new Error('Əsas anbar artıq mövcuddur');
+      }
+    } else {
+      // Branch warehouses need a branch. There's no separate Branches screen, so
+      // if one wasn't chosen, create a matching branch automatically (1:1 with
+      // the warehouse) — the model requires it for sales/reporting.
+      if (!data.branchId) {
+        const branch = await Branch.create({
+          name: data.name,
+          code: await this._generateCode(Branch, 'BR'),
+          address: data.address || data.name
+        });
+        data.branchId = branch._id;
       }
     }
 
-    const warehouse = await Warehouse.create({
-      ...warehouseData,
-      code: warehouseData.code.toUpperCase()
-    });
-
-    return warehouse;
+    return Warehouse.create(data);
   }
 
   async getAll(filters = {}, canAccessMainWarehouse = false) {

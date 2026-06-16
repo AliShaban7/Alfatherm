@@ -408,10 +408,15 @@ const NewSale = () => {
     }
   };
 
-  const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.sku.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredProducts = products.filter((p) => {
+    const q = searchTerm.toLowerCase();
+    return (
+      p.name.toLowerCase().includes(q) ||
+      (p.brand || '').toLowerCase().includes(q) ||
+      (p.manufacturer || '').toLowerCase().includes(q) ||
+      (p.sku || '').toLowerCase().includes(q)
+    );
+  });
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('az-AZ', {
@@ -480,7 +485,12 @@ const NewSale = () => {
                         >
                           <div>
                             <div style={{ fontWeight: 500 }}>{product.name}</div>
-                            <div style={{ fontSize: '0.8125rem', color: 'var(--gray-500)' }}>{product.sku}</div>
+                            <div style={{ fontSize: '0.8125rem', color: 'var(--gray-500)', display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                              {product.brand && <span>Brend: {product.brand}</span>}
+                              {product.manufacturer && <span>İstehsalçı: {product.manufacturer}</span>}
+                              {!product.brand && !product.manufacturer && <span>{product.sku}</span>}
+                              {product.color && <span>Rəng: {product.color}</span>}
+                            </div>
                             {formData.warehouseId && (
                               <div style={{ fontSize: '0.75rem', fontWeight: 500, color: getAvailableStock(product._id) > 0 ? 'var(--success, #16a34a)' : 'var(--danger)' }}>
                                 {getAvailableStock(product._id) > 0

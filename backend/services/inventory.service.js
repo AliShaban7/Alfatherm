@@ -29,7 +29,7 @@ class InventoryService {
       throw new Error('Vendor seçin');
     }
 
-    const vendor = await Vendor.findOne({ _id: vendorId, ownerId });
+    const vendor = await Vendor.findById(vendorId); // vendors are shared across owners
     if (!vendor) {
       throw new Error('Vendor tapılmadı');
     }

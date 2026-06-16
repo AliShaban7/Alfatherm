@@ -26,6 +26,8 @@ const Products = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
+  const [brand, setBrand] = useState('');
+  const [manufacturer, setManufacturer] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const { isOwner, isSuperOwner, user } = useAuth();
@@ -47,7 +49,7 @@ const Products = () => {
   useEffect(() => {
     fetchCategories();
     fetchProducts();
-  }, [category]);
+  }, [category, brand, manufacturer]);
 
   useEffect(() => {
     fetchOptions();
@@ -74,7 +76,7 @@ const Products = () => {
   const fetchProducts = async () => {
     try {
       setLoading(true);
-      const response = await productAPI.getAll({ search, category });
+      const response = await productAPI.getAll({ search, category, brand, manufacturer });
       setProducts(response.data.products);
     } catch (error) {
       toast.error('Məhsulları yükləmək mümkün olmadı');
@@ -252,7 +254,38 @@ const Products = () => {
               <option key={cat.code} value={cat.code}>{cat.name}</option>
             ))}
           </select>
+          <select
+            className="form-control"
+            style={{ width: 'auto' }}
+            value={brand}
+            onChange={(e) => setBrand(e.target.value)}
+          >
+            <option value="">Bütün brendlər</option>
+            {options.brand.map((b) => (
+              <option key={b} value={b}>{b}</option>
+            ))}
+          </select>
+          <select
+            className="form-control"
+            style={{ width: 'auto' }}
+            value={manufacturer}
+            onChange={(e) => setManufacturer(e.target.value)}
+          >
+            <option value="">Bütün istehsalçılar</option>
+            {options.manufacturer.map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
           <button type="submit" className="btn btn-secondary">Axtar</button>
+          {(brand || manufacturer || category) && (
+            <button
+              type="button"
+              className="btn btn-sm btn-secondary"
+              onClick={() => { setBrand(''); setManufacturer(''); setCategory(''); }}
+            >
+              Təmizlə
+            </button>
+          )}
         </form>
 
         {loading ? (

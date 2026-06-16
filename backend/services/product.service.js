@@ -103,6 +103,15 @@ class ProductService {
       query.category = filters.category;
     }
 
+    // Exact-match filters (values come from the canonical option dropdowns).
+    if (filters.brand) {
+      query.brand = filters.brand;
+    }
+
+    if (filters.manufacturer) {
+      query.manufacturer = filters.manufacturer;
+    }
+
     if (filters.search) {
       query.$or = [
         { name: { $regex: filters.search, $options: 'i' } },

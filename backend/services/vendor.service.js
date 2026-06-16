@@ -11,8 +11,10 @@ class VendorService {
     return vendor;
   }
 
+  // Vendors are a shared pool: both owners and the director see and use the same
+  // list (ownerId is kept only to record who first added a vendor).
   async getAll(ownerId, filters = {}) {
-    const query = { ownerId, isActive: true };
+    const query = { isActive: true };
 
     if (filters.search) {
       query.$or = [
@@ -46,8 +48,8 @@ class VendorService {
     };
   }
 
-  async getById(id, ownerId) {
-    const vendor = await Vendor.findOne({ _id: id, ownerId });
+  async getById(id) {
+    const vendor = await Vendor.findById(id);
 
     if (!vendor) {
       throw new Error('Vendor tapılmadı');
@@ -56,9 +58,9 @@ class VendorService {
     return vendor;
   }
 
-  async update(id, updateData, ownerId) {
-    const vendor = await Vendor.findOneAndUpdate(
-      { _id: id, ownerId },
+  async update(id, updateData) {
+    const vendor = await Vendor.findByIdAndUpdate(
+      id,
       updateData,
       { new: true, runValidators: true }
     );
@@ -70,8 +72,8 @@ class VendorService {
     return vendor;
   }
 
-  async delete(id, ownerId) {
-    const vendor = await Vendor.findOne({ _id: id, ownerId });
+  async delete(id) {
+    const vendor = await Vendor.findById(id);
 
     if (!vendor) {
       throw new Error('Vendor tapılmadı');
