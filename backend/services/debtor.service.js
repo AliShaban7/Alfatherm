@@ -7,6 +7,12 @@ class DebtorService {
   async getAll(ownerFilter = {}, filters = {}) {
     const query = { ...ownerFilter };
 
+    // Director can narrow to one owner's portion (ignored for owners — their
+    // ownerFilter already pins them to themselves).
+    if (filters.ownerId) {
+      query.ownerId = filters.ownerId;
+    }
+
     if (filters.status) {
       query.status = filters.status;
     }
