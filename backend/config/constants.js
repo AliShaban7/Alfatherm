@@ -76,14 +76,16 @@ module.exports = {
     UTILITIES: 'utilities',
     MAINTENANCE: 'maintenance',
     MARKETING: 'marketing',
-    COURIER: 'courier',
-    PACKAGING: 'packaging',
+    DELIVERY: 'delivery',
+    INSTALLATION: 'installation',
+    COURIER: 'courier', // legacy
+    PACKAGING: 'packaging', // legacy
     OTHER: 'other'
   },
 
   // Categories selectable as per-sale expenses at checkout (split between owners
   // by item share). Commission is NOT here — it has its own payable ledger.
-  SALE_EXPENSE_CATEGORIES: ['courier', 'packaging', 'other'],
+  SALE_EXPENSE_CATEGORIES: ['delivery', 'installation', 'other'],
 
   // Debtor/Creditor Status
   DEBT_STATUS: {

@@ -76,7 +76,7 @@ const Fakturalar = () => {
       </div>
 
       <div className="card">
-        {loading ? (
+        {loading && invoices.length === 0 ? (
           <div className="loading"><div className="spinner"></div></div>
         ) : invoices.length === 0 ? (
           <div className="empty-state">
@@ -173,7 +173,7 @@ const Fakturalar = () => {
                   <tr>
                     <th>Məhsul</th>
                     <th>Miqdar</th>
-                    <th>Maya (vahid)</th>
+                    <th>Maya dəyəri</th>
                     <th>Cəm</th>
                   </tr>
                 </thead>

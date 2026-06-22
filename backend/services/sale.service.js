@@ -16,9 +16,11 @@ const { PAYMENT_TYPES, ROLES, WAREHOUSE_TYPES, INVENTORY_TRANSACTION_TYPES, SALE
 // Azerbaijani labels for sale-expense categories, used in the auto-generated
 // Expense description (e.g. "Kuryer - Satış SAL-...").
 const SALE_EXPENSE_LABELS = {
-  courier: 'Kuryer',
-  packaging: 'Qablaşdırma',
-  other: 'Digər xərc'
+  delivery: 'Daşınma',
+  installation: 'Quraşdırma',
+  other: 'Digər xərc',
+  courier: 'Kuryer', // legacy
+  packaging: 'Qablaşdırma' // legacy
 };
 
 class SaleService {
@@ -85,7 +87,7 @@ class SaleService {
   }
 
   async create(saleData, user) {
-    const { customerId, warehouseId, salespersonId, items, paymentType, paymentMethod, isOfficial, paidAmount, note, commission, saleExpenses } = saleData;
+    const { customerId, warehouseId, salespersonId, items, paymentType, paymentMethod, isOfficial, paidAmount, note, commission, saleExpenses, discount } = saleData;
     const userId = user._id;
 
     // Referral commission requested? (usta resolved in the parallel fetch below.)
@@ -189,6 +191,13 @@ class SaleService {
       const unitCost = inventory.costPrice ?? product.costPrice ?? 0;
       const itemCost = unitCost * item.quantity;
 
+      // Never sell below the warehouse cost price (maya dəyəri). This is stricter
+      // than the min-price floor, since the live inventory cost can rise above
+      // minPrice over time.
+      if (item.unitPrice < unitCost) {
+        throw new Error(`"${product.name}" üçün qiymət maya dəyərindən (${unitCost.toFixed(2)} AZN) aşağı ola bilməz`);
+      }
+
       // Calculate discount as the difference between recommended and actual price
       const itemDiscount = item.unitPrice < product.recommendedPrice 
         ? (product.recommendedPrice - item.unitPrice) * item.quantity 
@@ -213,7 +222,14 @@ class SaleService {
       totalDiscount += itemDiscount;
     }
 
-    const totalAmount = subtotal;
+    // Manual whole-sale discount: clamp to [0, subtotal] and never let it push
+    // the sale below cost (consistent with the per-line maya dəyəri block).
+    const saleDiscount = Math.min(Math.max(Number(discount) || 0, 0), subtotal);
+    if (subtotal - saleDiscount < totalCost - 1e-6) {
+      throw new Error('Endirim çox böyükdür: satış maya dəyərindən aşağı düşə bilməz');
+    }
+
+    const totalAmount = Math.round((subtotal - saleDiscount) * 100) / 100;
     const profit = totalAmount - totalCost;
 
     // Up-front payment on a credit sale: coerce to a number (the body sends a
@@ -260,6 +276,7 @@ class SaleService {
         items: processedItems,
         subtotal,
         totalDiscount,
+        saleDiscount,
         totalAmount,
         totalCost,
         profit,
@@ -369,28 +386,28 @@ class SaleService {
       if (paymentType === PAYMENT_TYPES.CREDIT) {
         const totalPaid = paidAmountNum;
 
-        // Each owner is owed the value of their own goods. Allocate the buyer's
-        // upfront payment across owners in proportion to their share of the sale
-        // so every founder's receivable reflects only what they're actually owed.
-        const debtorOwnerIds = [...ownerSubtotals.keys()];
+        // Each owner is owed the value of their own goods, NET of the whole-sale
+        // discount: split the (already-discounted) totalAmount across owners by
+        // their share of the gross subtotal, then allocate the upfront payment.
+        const ownerNetShares = this._splitAmountByOwner(totalAmount, ownerSubtotals, subtotal);
         let allocatedPaid = 0;
 
-        const debtorDocs = debtorOwnerIds.map((debtorOwnerId, index) => {
-          const ownerShare = ownerSubtotals.get(debtorOwnerId);
+        const debtorDocs = ownerNetShares.map((s, index) => {
+          const ownerShare = s.amount; // net of discount
           // Give the last owner the rounding remainder so the parts sum exactly.
-          const ownerPaid = index === debtorOwnerIds.length - 1
-            ? totalPaid - allocatedPaid
+          const ownerPaid = index === ownerNetShares.length - 1
+            ? Math.round((totalPaid - allocatedPaid) * 100) / 100
             : Math.round((totalPaid * ownerShare / totalAmount) * 100) / 100;
           allocatedPaid += ownerPaid;
 
           return {
-            ownerId: debtorOwnerId,
+            ownerId: s.ownerId,
             customerId,
             saleId: createdSale._id,
             branchId,
             totalAmount: ownerShare,
             paidAmount: ownerPaid,
-            remainingAmount: ownerShare - ownerPaid,
+            remainingAmount: Math.round((ownerShare - ownerPaid) * 100) / 100,
             createdBy: userId
           };
         });

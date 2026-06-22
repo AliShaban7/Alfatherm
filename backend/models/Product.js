@@ -30,10 +30,12 @@ const productSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  // Category is a code managed in the Category collection (no fixed enum, so
+  // owners can add/remove categories freely via the Kateqoriyalar screen).
   category: {
     type: String,
-    enum: Object.values(PRODUCT_CATEGORIES),
-    required: [true, 'Kateqoriya seçin']
+    required: [true, 'Kateqoriya seçin'],
+    trim: true
   },
   unit: {
     type: String,

@@ -3,7 +3,11 @@ import { FiDollarSign, FiAlertCircle, FiDownload } from 'react-icons/fi';
 import { debtorAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { format } from 'date-fns';
+import { useAuth } from '../context/AuthContext';
+import { BUSINESS_OWNERS } from '../config/owners';
 import * as XLSX from 'xlsx';
+
+const ownerName = (id) => BUSINESS_OWNERS.find((o) => o.id === id)?.name || id || '—';
 
 const STATUS_LABELS = {
   pending: { label: 'Gözləyir', class: 'badge-warning' },
@@ -13,10 +17,12 @@ const STATUS_LABELS = {
 };
 
 const Debtors = () => {
+  const { isSuperOwner } = useAuth();
   const [debtors, setDebtors] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
+  const [ownerFilter, setOwnerFilter] = useState(''); // director: narrow to one owner
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedDebtor, setSelectedDebtor] = useState(null);
   const [paymentForm, setPaymentForm] = useState({
@@ -35,7 +41,7 @@ const Debtors = () => {
     try {
       setLoading(true);
       const [debtorsRes, summaryRes] = await Promise.all([
-        debtorAPI.getAll({ status: statusFilter }),
+        debtorAPI.getAll({ status: statusFilter, ownerId: ownerFilter }),
         debtorAPI.getSummary()
       ]);
       setDebtors(debtorsRes.data.debtors);
@@ -45,7 +51,7 @@ const Debtors = () => {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter]);
+  }, [statusFilter, ownerFilter]);
 
   const handlePayment = useCallback(async (e) => {
     e.preventDefault();
@@ -184,7 +190,7 @@ const Debtors = () => {
       </div>
 
       <div className="card">
-        <div style={{ marginBottom: '1rem' }}>
+        <div style={{ marginBottom: '1rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
           <select
             className="form-control"
             style={{ width: '200px' }}
@@ -197,9 +203,22 @@ const Debtors = () => {
             <option value="overdue">Gecikmiş</option>
             <option value="paid">Ödənilib</option>
           </select>
+          {isSuperOwner() && (
+            <select
+              className="form-control"
+              style={{ width: '200px' }}
+              value={ownerFilter}
+              onChange={(e) => setOwnerFilter(e.target.value)}
+            >
+              <option value="">Bütün sahiblər</option>
+              {BUSINESS_OWNERS.map((o) => (
+                <option key={o.id} value={o.id}>{o.name}</option>
+              ))}
+            </select>
+          )}
         </div>
 
-        {loading ? (
+        {loading && debtors.length === 0 ? (
           <div className="loading">
             <div className="spinner"></div>
           </div>
@@ -213,6 +232,7 @@ const Debtors = () => {
               <thead>
                 <tr>
                   <th>Müştəri</th>
+                  {isSuperOwner() && <th>Sahib</th>}
                   <th>Satış No</th>
                   <th>Filial</th>
                   <th>Toplam</th>
@@ -232,6 +252,7 @@ const Debtors = () => {
                         {debtor.customerId?.phone}
                       </div>
                     </td>
+                    {isSuperOwner() && <td>{ownerName(debtor.ownerId)}</td>}
                     <td>{debtor.saleId?.saleNumber || '-'}</td>
                     <td>{debtor.branchId?.name || '-'}</td>
                     <td>{formatCurrency(debtor.totalAmount)}</td>

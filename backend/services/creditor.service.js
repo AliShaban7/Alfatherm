@@ -55,6 +55,11 @@ class CreditorService {
   async getAll(ownerFilter = {}, filters = {}) {
     const query = { ...ownerFilter };
 
+    // Director can narrow to one owner's portion.
+    if (filters.ownerId) {
+      query.ownerId = filters.ownerId;
+    }
+
     if (filters.status) {
       query.status = filters.status;
     }

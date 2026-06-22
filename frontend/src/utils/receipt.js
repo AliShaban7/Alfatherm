@@ -21,6 +21,10 @@ export const buildReceiptHtml = (sale, options = {}) => {
     sale.totalDiscount ??
     (sale.items || []).reduce((sum, item) => sum + (item.discount || 0), 0);
 
+  // Manual whole-sale discount (actually deducted from the total).
+  const saleDiscount = Number(sale.saleDiscount) || 0;
+  const subtotal = Number(sale.subtotal) || ((Number(sale.totalAmount) || 0) + saleDiscount);
+
   const itemRows = (sale.items || [])
     .map((item) => {
       const qty = item.quantity || 1;
@@ -144,11 +148,15 @@ export const buildReceiptHtml = (sale, options = {}) => {
       </table>
       <div class="summary">
         ${
-          totalDiscount > 0
+          saleDiscount > 0
             ? `
+        <div class="summary-row">
+          <span>Ara cəm:</span>
+          <span>${subtotal.toFixed(2)} AZN</span>
+        </div>
         <div class="summary-row discount">
           <span>Endirim:</span>
-          <span>-${totalDiscount.toFixed(2)} AZN</span>
+          <span>-${saleDiscount.toFixed(2)} AZN</span>
         </div>
         `
             : ''
