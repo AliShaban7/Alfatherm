@@ -129,7 +129,7 @@ const Salesmen = () => {
           </div>
         </div>
 
-        {loading ? (
+        {loading && salespersons.length === 0 ? (
           <div className="loading"><div className="spinner"></div></div>
         ) : salespersons.length === 0 ? (
           <div className="empty-state">

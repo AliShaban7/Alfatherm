@@ -101,7 +101,7 @@ const Ustalar = () => {
       </div>
 
       <div className="card">
-        {loading ? (
+        {loading && ustas.length === 0 ? (
           <div className="loading"><div className="spinner"></div></div>
         ) : ustas.length === 0 ? (
           <div className="empty-state">

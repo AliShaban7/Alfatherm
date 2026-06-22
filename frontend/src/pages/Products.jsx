@@ -1,11 +1,28 @@
-import { useState, useEffect } from 'react';
-import { FiPlus, FiSearch, FiEdit2, FiTrash2, FiDownload } from 'react-icons/fi';
-import { productAPI, categoryAPI } from '../services/api';
+import { useState, useEffect, useRef } from 'react';
+import { FiPlus, FiSearch, FiEdit2, FiTrash2, FiDownload, FiUpload } from 'react-icons/fi';
+import { productAPI, categoryAPI, vendorAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
 import { BUSINESS_OWNERS } from '../config/owners';
 import ComboBox from '../components/common/ComboBox';
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
+
+// Excel template columns → normalized field sent to the import API.
+const IMPORT_COLUMNS = [
+  ['Ad', 'name'],
+  ['Kateqoriya', 'category'],
+  ['Vahid', 'unit'],
+  ['Brend', 'brand'],
+  ['İstehsalçı', 'manufacturer'],
+  ['Ölkə', 'country'],
+  ['Rəng', 'color'],
+  ['Maya dəyəri', 'costPrice'],
+  ['Min qiymət', 'minPrice'],
+  ['Tövsiyə qiymət', 'recommendedPrice'],
+  ['Təsvir', 'description'],
+  ['Sahib', 'owner']
+];
 
 const UNITS = [
   { value: 'eded', label: 'Ədəd' },
@@ -23,19 +40,24 @@ const Products = () => {
   const [categories, setCategories] = useState([]);
   // Existing distinct values for the pick-or-add-new fields.
   const [options, setOptions] = useState({ brand: [], manufacturer: [], country: [], color: [] });
+  // İstehsalçı is tied to the Vendors registry by id (rename-proof).
+  const [vendors, setVendors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
   const [brand, setBrand] = useState('');
-  const [manufacturer, setManufacturer] = useState('');
+  const [vendorFilter, setVendorFilter] = useState(''); // İstehsalçı filter (vendorId)
   const [showModal, setShowModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const fileInputRef = useRef(null);
   const { isOwner, isSuperOwner, user } = useAuth();
 
   const [formData, setFormData] = useState({
     name: '',
     brand: '',
-    manufacturer: '',
+    vendorId: '', // İstehsalçı
     country: '',
     category: 'general',
     unit: 'eded',
@@ -46,14 +68,26 @@ const Products = () => {
     ownerId: user?.ownerId || ''
   });
 
+  // Only the product list depends on filters.
+  useEffect(() => {
+    fetchProducts();
+  }, [category, brand, vendorFilter]);
+
+  // Reference data loads once (categories don't change with filters).
   useEffect(() => {
     fetchCategories();
-    fetchProducts();
-  }, [category, brand, manufacturer]);
-
-  useEffect(() => {
     fetchOptions();
+    fetchVendors();
   }, []);
+
+  const fetchVendors = async () => {
+    try {
+      const response = await vendorAPI.getAll({ limit: 1000 });
+      setVendors(response.data.vendors || []);
+    } catch (error) {
+      console.error('Vendorları yükləmək mümkün olmadı');
+    }
+  };
 
   const fetchCategories = async () => {
     try {
@@ -76,7 +110,7 @@ const Products = () => {
   const fetchProducts = async () => {
     try {
       setLoading(true);
-      const response = await productAPI.getAll({ search, category, brand, manufacturer });
+      const response = await productAPI.getAll({ search, category, brand, vendorId: vendorFilter });
       setProducts(response.data.products);
     } catch (error) {
       toast.error('Məhsulları yükləmək mümkün olmadı');
@@ -122,7 +156,7 @@ const Products = () => {
     setFormData({
       name: product.name,
       brand: product.brand || '',
-      manufacturer: product.manufacturer || '',
+      vendorId: product.vendorId || '',
       country: product.country || '',
       category: product.category,
       unit: product.unit,
@@ -150,7 +184,7 @@ const Products = () => {
     setFormData({
       name: '',
       brand: '',
-      manufacturer: '',
+      vendorId: '',
       country: '',
       category: 'general',
       unit: 'eded',
@@ -168,6 +202,153 @@ const Products = () => {
     }).format(amount) + ' AZN';
   };
 
+  const downloadTemplate = async () => {
+    const headers = IMPORT_COLUMNS.map((c) => c[0]);
+    const ROWS = 1000; // how many rows get dropdowns / borders
+
+    // Dropdown sources from live data: categories from the Category collection,
+    // İstehsalçı from the vendors' company name (Şirkət), with name as fallback.
+    const categoryNames = categories.map((c) => c.name).filter(Boolean);
+    const units = ['Ədəd', 'Metr', 'm2', 'm3', 'Kq', 'Litr', 'Dəst', 'Qutu'];
+    const owners = ['Zaur', 'Ədalət'];
+    const vendorList = vendors.map((v) => v.companyName || v.name).filter(Boolean);
+    const brandList = options.brand || [];
+    const countryList = options.country || [];
+    const colorList = options.color || [];
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Məhsullar');
+
+    // Hidden sheet holding the dropdown source lists.
+    const lists = wb.addWorksheet('Siyahılar', { state: 'veryHidden' });
+    const writeList = (col, values) => values.forEach((v, i) => { lists.getCell(`${col}${i + 1}`).value = v; });
+    writeList('A', categoryNames);
+    writeList('B', units);
+    writeList('C', owners);
+    writeList('D', vendorList);
+    writeList('E', brandList);
+    writeList('F', countryList);
+    writeList('G', colorList);
+
+    // Header row (blue, white, bold, bordered) + column widths.
+    ws.addRow(headers);
+    const widths = [28, 14, 10, 16, 18, 14, 12, 14, 14, 16, 24, 12];
+    widths.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+    const headerRow = ws.getRow(1);
+    headerRow.height = 22;
+    headerRow.eachCell((cell) => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
+      cell.font = { color: { argb: 'FFFFFFFF' }, bold: true };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+      };
+    });
+
+    // Example row.
+    ws.addRow([
+      'Nümunə Kran 1/2"', categoryNames[0] || 'Ümumi', 'Ədəd', 'Bosch', vendorList[0] || '',
+      'Türkiyə', 'Ağ', 5, 7, 10, '', isSuperOwner() ? 'Zaur' : ''
+    ]);
+
+    // Dropdowns (data validation) on the relevant columns for rows 2..ROWS.
+    // Məhsullar cols: B=Kateqoriya, C=Vahid, D=Brend, E=İstehsalçı, F=Ölkə,
+    // G=Rəng, L=Sahib. `strict` rejects off-list values; loose dropdowns just
+    // suggest (Brend/Ölkə/Rəng can take new values on import).
+    const addList = (colLetter, listCol, count, strict = true) => {
+      if (count === 0) return;
+      const formula = `Siyahılar!$${listCol}$1:$${listCol}$${count}`;
+      for (let r = 2; r <= ROWS; r++) {
+        ws.getCell(`${colLetter}${r}`).dataValidation = strict
+          ? {
+              type: 'list', allowBlank: true, formulae: [formula],
+              showErrorMessage: true, error: 'Yalnız siyahıdan seçin', errorTitle: 'Yanlış dəyər'
+            }
+          : { type: 'list', allowBlank: true, formulae: [formula], showErrorMessage: false };
+      }
+    };
+    // Strict: must match existing data.
+    addList('B', 'A', categoryNames.length);   // Kateqoriya
+    addList('C', 'B', units.length);           // Vahid
+    addList('E', 'D', vendorList.length);      // İstehsalçı
+    addList('L', 'C', owners.length);          // Sahib
+    // Suggestions (allow new values too).
+    addList('D', 'E', brandList.length, false);   // Brend
+    addList('F', 'F', countryList.length, false); // Ölkə
+    addList('G', 'G', colorList.length, false);   // Rəng
+
+    // Instructions sheet.
+    const help = wb.addWorksheet('Təlimat');
+    help.getColumn(1).width = 22;
+    help.getColumn(2).width = 70;
+    [
+      ['Sahə', 'İzah / Qəbul edilən dəyərlər'],
+      ['Ad', 'Məhsulun adı — MƏCBURİ'],
+      ['Kateqoriya', 'Açılan siyahıdan seçin'],
+      ['Vahid', 'Açılan siyahıdan seçin'],
+      ['İstehsalçı', 'Açılan siyahıdan vendor seçin'],
+      ['Maya dəyəri', 'Rəqəm (boş = 0)'],
+      ['Min qiymət', 'Rəqəm — MƏCBURİ. Maya dəyərindən az ola bilməz'],
+      ['Tövsiyə qiymət', 'Rəqəm — MƏCBURİ. Min qiymətdən az ola bilməz'],
+      ['Sahib', 'Yalnız direktor üçün: açılan siyahıdan Zaur/Ədalət (sahiblər üçün boş)']
+    ].forEach((r) => help.addRow(r));
+    help.getRow(1).font = { bold: true };
+
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'mehsul_idxal_sablonu.xlsx';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file
+    if (!file) return;
+
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array' });
+      const ws = wb.Sheets['Məhsullar'] || wb.Sheets[wb.SheetNames[0]];
+      const rawRows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+      const products = rawRows
+        .map((row) => {
+          const obj = {};
+          IMPORT_COLUMNS.forEach(([header, field]) => { obj[field] = row[header]; });
+          return obj;
+        })
+        .filter((p) => String(p.name || '').trim());
+
+      if (!products.length) {
+        toast.warning('Faylda doldurulmuş sətir tapılmadı');
+        return;
+      }
+
+      const res = await productAPI.importProducts(products);
+      const result = res.data.data;
+      setImportResult(result);
+      if (result.created) toast.success(`${result.created} məhsul idxal edildi`);
+      if (result.failed) toast.error(`${result.failed} sətir idxal edilmədi`);
+      fetchProducts();
+      fetchOptions();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'İdxal zamanı xəta baş verdi');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const exportToExcel = () => {
     if (!products.length) {
       toast.warning('Eksport üçün məlumat yoxdur');
@@ -180,7 +361,9 @@ const Products = () => {
       'SKU': product.sku,
       'Kateqoriya': categories.find(c => c.code === product.category)?.name || product.category,
       'Brend': product.brand || '',
-      'İstehsalçı': product.manufacturer || '',
+      'İstehsalçı': (vendors.find((v) => v._id === product.vendorId)?.companyName)
+        || (vendors.find((v) => v._id === product.vendorId)?.name)
+        || product.manufacturer || '',
       'Ölkə': product.country || '',
       'Ölçü vahidi': UNITS.find(u => u.value === product.unit)?.label || product.unit,
       'Rəng': product.color || '',
@@ -223,12 +406,50 @@ const Products = () => {
             <FiDownload /> Excel
           </button>
           {isOwner() && (
-            <button className="btn btn-primary" onClick={() => { resetForm(); setShowModal(true); }}>
-              <FiPlus /> Yeni Məhsul
-            </button>
+            <>
+              <button className="btn btn-secondary" onClick={downloadTemplate} title="Excel idxal şablonu">
+                <FiDownload /> Şablon
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={importing}
+              >
+                <FiUpload /> {importing ? 'İdxal olunur...' : 'Excel idxal'}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                style={{ display: 'none' }}
+                onChange={handleImportFile}
+              />
+              <button className="btn btn-primary" onClick={() => { resetForm(); setShowModal(true); }}>
+                <FiPlus /> Yeni Məhsul
+              </button>
+            </>
           )}
         </div>
       </div>
+
+      {importResult && (
+        <div className="card" style={{ marginBottom: '1rem', borderLeft: `4px solid ${importResult.failed ? 'var(--warning)' : 'var(--success)'}` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <strong>
+              İdxal nəticəsi: {importResult.created} əlavə edildi
+              {importResult.failed ? `, ${importResult.failed} uğursuz` : ''}
+            </strong>
+            <button className="modal-close" onClick={() => setImportResult(null)}>&times;</button>
+          </div>
+          {importResult.errors?.length > 0 && (
+            <div style={{ marginTop: '0.5rem', maxHeight: '180px', overflowY: 'auto', fontSize: '0.8125rem', color: 'var(--gray-600)' }}>
+              {importResult.errors.map((e, i) => (
+                <div key={i}>Sətir {e.row}{e.name ? ` (${e.name})` : ''}: {e.error}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="card">
         <form onSubmit={handleSearch} style={{ display: 'flex', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
@@ -268,27 +489,27 @@ const Products = () => {
           <select
             className="form-control"
             style={{ width: 'auto' }}
-            value={manufacturer}
-            onChange={(e) => setManufacturer(e.target.value)}
+            value={vendorFilter}
+            onChange={(e) => setVendorFilter(e.target.value)}
           >
             <option value="">Bütün istehsalçılar</option>
-            {options.manufacturer.map((m) => (
-              <option key={m} value={m}>{m}</option>
+            {vendors.map((v) => (
+              <option key={v._id} value={v._id}>{v.companyName || v.name}</option>
             ))}
           </select>
           <button type="submit" className="btn btn-secondary">Axtar</button>
-          {(brand || manufacturer || category) && (
+          {(brand || vendorFilter || category) && (
             <button
               type="button"
               className="btn btn-sm btn-secondary"
-              onClick={() => { setBrand(''); setManufacturer(''); setCategory(''); }}
+              onClick={() => { setBrand(''); setVendorFilter(''); setCategory(''); }}
             >
               Təmizlə
             </button>
           )}
         </form>
 
-        {loading ? (
+        {loading && products.length === 0 ? (
           <div className="loading">
             <div className="spinner"></div>
           </div>
@@ -421,13 +642,17 @@ const Products = () => {
                     />
                   </div>
                   <div className="form-group">
-                    <label className="form-label">İstehsalçı</label>
-                    <ComboBox
-                      value={formData.manufacturer}
-                      onChange={(v) => setFormData({ ...formData, manufacturer: v })}
-                      options={options.manufacturer}
-                      placeholder="Siyahıdan seçin və ya əlavə edin"
-                    />
+                    <label className="form-label">İstehsalçı (Vendor)</label>
+                    <select
+                      className="form-control"
+                      value={formData.vendorId}
+                      onChange={(e) => setFormData({ ...formData, vendorId: e.target.value })}
+                    >
+                      <option value="">Vendor seçin...</option>
+                      {vendors.map((v) => (
+                        <option key={v._id} value={v._id}>{v.companyName || v.name}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
                 <div className="form-row">

@@ -361,7 +361,7 @@ const Expenses = () => {
           )}
         </div>
 
-        {loading ? (
+        {loading && expenses.length === 0 ? (
           <div className="loading">
             <div className="spinner"></div>
           </div>

@@ -144,7 +144,7 @@ const Vendors = () => {
           <button type="submit" className="btn btn-secondary">Axtar</button>
         </form>
 
-        {loading ? (
+        {loading && vendors.length === 0 ? (
           <div className="loading">
             <div className="spinner"></div>
           </div>

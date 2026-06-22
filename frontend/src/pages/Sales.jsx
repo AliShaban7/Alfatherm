@@ -24,7 +24,7 @@ const Sales = () => {
   const [detailLoading, setDetailLoading] = useState(false);
   const { isOwner } = useAuth();
 
-  const SALE_EXPENSE_LABELS = { courier: 'Kuryer', packaging: 'Qablaşdırma', other: 'Digər' };
+  const SALE_EXPENSE_LABELS = { delivery: 'Daşınma', installation: 'Quraşdırma', other: 'Digər', courier: 'Kuryer', packaging: 'Qablaşdırma' };
 
   useEffect(() => {
     const prepend = pendingPrepend.current;
@@ -195,7 +195,7 @@ const Sales = () => {
           </button>
         </div>
 
-        {loading ? (
+        {loading && sales.length === 0 ? (
           <div className="loading">
             <div className="spinner"></div>
           </div>
@@ -361,6 +361,16 @@ const Sales = () => {
                     </tbody>
                   </table>
 
+                  {detailSale.saleDiscount > 0 && (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
+                        <span>Ara cəm</span><span>{formatCurrency(detailSale.subtotal)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', color: 'var(--danger)' }}>
+                        <span>Endirim</span><span>-{formatCurrency(detailSale.saleDiscount)}</span>
+                      </div>
+                    </>
+                  )}
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
                     <span>Toplam</span><strong>{formatCurrency(detailSale.totalAmount)}</strong>
                   </div>

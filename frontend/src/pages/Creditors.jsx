@@ -271,7 +271,7 @@ const Creditors = () => {
           )}
         </div>
 
-        {loading ? (
+        {loading && creditors.length === 0 ? (
           <div className="loading">
             <div className="spinner"></div>
           </div>

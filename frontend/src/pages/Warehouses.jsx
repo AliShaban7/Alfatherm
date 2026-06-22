@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FiPlus, FiEdit2, FiTrash2, FiHome, FiMapPin } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiPackage, FiShoppingCart } from 'react-icons/fi';
 import { warehouseAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
@@ -15,7 +15,8 @@ const Warehouses = () => {
     name: '',
     code: '',
     type: 'branch',
-    address: ''
+    address: '',
+    isStore: false
   });
 
   useEffect(() => {
@@ -38,11 +39,24 @@ const Warehouses = () => {
     e.preventDefault();
     try {
       if (editingWarehouse) {
-        await warehouseAPI.update(editingWarehouse._id, formData);
-        toast.success('Anbar yeniləndi');
+        // Don't touch type/code on edit — only name, address and store flag.
+        await warehouseAPI.update(editingWarehouse._id, {
+          name: formData.name,
+          address: formData.address,
+          isStore: formData.isStore
+        });
+        toast.success(formData.isStore ? 'Mağaza yeniləndi' : 'Anbar yeniləndi');
       } else {
-        await warehouseAPI.create(formData);
-        toast.success('Anbar əlavə edildi');
+        // No more main/branch separation in the UI: everything is created as a
+        // 'branch' (so it's sellable and gets an auto-branch); isStore decides
+        // whether it's an Anbar (storage) or a Mağaza (selling point).
+        await warehouseAPI.create({
+          name: formData.name,
+          address: formData.address,
+          isStore: formData.isStore,
+          type: 'branch'
+        });
+        toast.success(formData.isStore ? 'Mağaza əlavə edildi' : 'Anbar əlavə edildi');
       }
       setShowModal(false);
       resetForm();
@@ -58,7 +72,8 @@ const Warehouses = () => {
       name: warehouse.name,
       code: warehouse.code,
       type: warehouse.type,
-      address: warehouse.address || ''
+      address: warehouse.address || '',
+      isStore: warehouse.isStore || false
     });
     setShowModal(true);
   };
@@ -80,21 +95,13 @@ const Warehouses = () => {
       name: '',
       code: '',
       type: 'branch',
-      address: ''
+      address: '',
+      isStore: false
     });
   };
 
-  const getTypeLabel = (type) => {
-    switch (type) {
-      case 'main': return 'Əsas Anbar';
-      case 'branch': return 'Filial Anbarı';
-      default: return type;
-    }
-  };
-
-  const getTypeIcon = (type) => {
-    return type === 'main' ? <FiHome /> : <FiMapPin />;
-  };
+  const kindLabel = (w) => (w.isStore ? 'Mağaza' : 'Anbar');
+  const kindIcon = (w) => (w.isStore ? <FiShoppingCart /> : <FiPackage />);
 
   return (
     <div>
@@ -110,7 +117,7 @@ const Warehouses = () => {
       </div>
 
       <div className="card">
-        {loading ? (
+        {loading && warehouses.length === 0 ? (
           <div className="loading">
             <div className="spinner"></div>
           </div>
@@ -136,8 +143,8 @@ const Warehouses = () => {
                   <tr key={warehouse._id}>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{ color: warehouse.type === 'main' ? 'var(--primary)' : 'var(--gray-500)' }}>
-                          {getTypeIcon(warehouse.type)}
+                        <span style={{ color: warehouse.isStore ? 'var(--success, #16a34a)' : 'var(--gray-500)' }}>
+                          {kindIcon(warehouse)}
                         </span>
                         <strong>{warehouse.name}</strong>
                       </div>
@@ -145,7 +152,11 @@ const Warehouses = () => {
                     <td>
                       <span className="badge badge-secondary">{warehouse.code}</span>
                     </td>
-                    <td>{getTypeLabel(warehouse.type)}</td>
+                    <td>
+                      <span className={`badge ${warehouse.isStore ? 'badge-success' : 'badge-secondary'}`}>
+                        {kindLabel(warehouse)}
+                      </span>
+                    </td>
                     <td>{warehouse.address || '-'}</td>
                     <td>
                       <span className={`badge ${warehouse.isActive ? 'badge-success' : 'badge-secondary'}`}>
@@ -187,19 +198,23 @@ const Warehouses = () => {
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">{editingWarehouse ? 'Anbarı Redaktə Et' : 'Yeni Anbar'}</h3>
+              <h3 className="modal-title">
+                {editingWarehouse
+                  ? (formData.isStore ? 'Mağazanı Redaktə Et' : 'Anbarı Redaktə Et')
+                  : 'Yeni Anbar / Mağaza'}
+              </h3>
               <button className="modal-close" onClick={() => setShowModal(false)}>&times;</button>
             </div>
             <form onSubmit={handleSubmit}>
               <div className="modal-body">
                 <div className="form-group">
-                  <label className="form-label">Anbar Adı *</label>
+                  <label className="form-label">Ad *</label>
                   <input
                     type="text"
                     className="form-control"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="Məs: Əsas Anbar"
+                    placeholder="Məs: Mərkəzi anbar / Nizami mağaza"
                     required
                   />
                 </div>
@@ -216,13 +231,15 @@ const Warehouses = () => {
                   <label className="form-label">Tip *</label>
                   <select
                     className="form-control"
-                    value={formData.type}
-                    onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                    disabled={editingWarehouse?.type === 'main'}
+                    value={formData.isStore ? 'store' : 'warehouse'}
+                    onChange={(e) => setFormData({ ...formData, isStore: e.target.value === 'store' })}
                   >
-                    <option value="branch">Filial Anbarı</option>
-                    <option value="main">Əsas Anbar</option>
+                    <option value="warehouse">Anbar (saxlama)</option>
+                    <option value="store">Mağaza (satış nöqtəsi)</option>
                   </select>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--gray-500)', marginTop: '4px' }}>
+                    Satışda yalnız mağazalar seçilir. Anbara mal alınır, sonra mağazaya transfer edilir.
+                  </div>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Ünvan</label>
@@ -231,7 +248,7 @@ const Warehouses = () => {
                     className="form-control"
                     value={formData.address}
                     onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                    placeholder="Anbar ünvanı"
+                    placeholder="Ünvan"
                   />
                 </div>
               </div>

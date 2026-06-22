@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FiPlus, FiTrash2, FiSearch } from 'react-icons/fi';
 import CustomerFormModal from '../components/customers/CustomerFormModal';
-import { saleAPI, productAPI, customerAPI, warehouseAPI, salespersonAPI, ustaAPI } from '../services/api';
+import { saleAPI, productAPI, customerAPI, warehouseAPI, salespersonAPI, ustaAPI, vendorAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
 import { format } from 'date-fns';
@@ -23,6 +23,7 @@ const NewSale = () => {
   const [customers, setCustomers] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
   const [salespersons, setSalespersons] = useState([]);
+  const [vendorMap, setVendorMap] = useState({}); // vendorId -> name (İstehsalçı display)
   const [stockMap, setStockMap] = useState({});
   const [stockLoading, setStockLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -41,8 +42,8 @@ const NewSale = () => {
   const [saleExpenses, setSaleExpenses] = useState([]); // [{ category, amount }]
 
   const SALE_EXPENSE_OPTIONS = [
-    { value: 'courier', label: 'Kuryer' },
-    { value: 'packaging', label: 'Qablaşdırma' },
+    { value: 'delivery', label: 'Daşınma' },
+    { value: 'installation', label: 'Quraşdırma' },
     { value: 'other', label: 'Digər' }
   ];
 
@@ -53,6 +54,7 @@ const NewSale = () => {
     bankMethod: BANK_METHOD.POS,
     isOfficial: false,
     paidAmount: '',
+    discount: '',
     note: '',
     items: []
   });
@@ -99,18 +101,22 @@ const NewSale = () => {
 
   const fetchInitialData = async () => {
     try {
-      const [productsRes, customersRes, warehousesRes, salespersonsRes, ustasRes] = await Promise.all([
+      const [productsRes, customersRes, warehousesRes, salespersonsRes, ustasRes, vendorsRes] = await Promise.all([
         productAPI.getAll({ limit: 1000 }),
         customerAPI.getAll({ limit: 1000 }),
         warehouseAPI.getAll(),
         salespersonAPI.getAll(),
-        ustaAPI.getAll()
+        ustaAPI.getAll(),
+        vendorAPI.getAll({ limit: 1000 })
       ]);
       setProducts(productsRes.data.products);
       setCustomers(customersRes.data.customers);
       setWarehouses(warehousesRes.data.data);
       setSalespersons(salespersonsRes.data.data || []);
       setUstas(ustasRes.data.data || []);
+      setVendorMap(
+        (vendorsRes.data.vendors || []).reduce((acc, v) => { acc[v._id] = v.name; return acc; }, {})
+      );
     } catch (error) {
       toast.error('Məlumatları yükləmək mümkün olmadı');
     }
@@ -181,7 +187,7 @@ const NewSale = () => {
     }, 0);
   };
 
-  const calculateTotal = () => {
+  const calculateSubtotal = () => {
     return formData.items.reduce((sum, item) => {
       const qty = item.quantity === '' ? 0 : item.quantity;
       const price = item.unitPrice === '' ? 0 : item.unitPrice;
@@ -189,8 +195,16 @@ const NewSale = () => {
     }, 0);
   };
 
+  // Whole-sale discount (clamped to the subtotal); Toplam = subtotal − discount.
+  const getDiscount = () => {
+    const d = formData.discount === '' ? 0 : parseFloat(formData.discount) || 0;
+    return Math.min(Math.max(d, 0), calculateSubtotal());
+  };
+
+  const calculateTotal = () => calculateSubtotal() - getDiscount();
+
   const addExpenseRow = () =>
-    setSaleExpenses((rows) => [...rows, { category: 'courier', amount: '' }]);
+    setSaleExpenses((rows) => [...rows, { category: 'delivery', amount: '' }]);
 
   const updateExpenseRow = (index, field, value) =>
     setSaleExpenses((rows) =>
@@ -311,6 +325,10 @@ const NewSale = () => {
       payload.note = formData.note.trim();
     }
 
+    if (getDiscount() > 0) {
+      payload.discount = getDiscount();
+    }
+
     if (commissionAmount > 0) {
       payload.commission = { ustaId: commission.ustaId, amount: commissionAmount };
     }
@@ -413,10 +431,15 @@ const NewSale = () => {
     return (
       p.name.toLowerCase().includes(q) ||
       (p.brand || '').toLowerCase().includes(q) ||
-      (p.manufacturer || '').toLowerCase().includes(q) ||
+      (vendorMap[p.vendorId] || '').toLowerCase().includes(q) ||
       (p.sku || '').toLowerCase().includes(q)
     );
   });
+
+  // Sales are made from stores (satış nöqtələri). Fall back to all warehouses
+  // only if no store is marked yet, so the screen never breaks during setup.
+  const storeWarehouses = warehouses.filter((w) => w.isStore);
+  const saleWarehouses = storeWarehouses.length ? storeWarehouses : warehouses;
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('az-AZ', {
@@ -487,8 +510,8 @@ const NewSale = () => {
                             <div style={{ fontWeight: 500 }}>{product.name}</div>
                             <div style={{ fontSize: '0.8125rem', color: 'var(--gray-500)', display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
                               {product.brand && <span>Brend: {product.brand}</span>}
-                              {product.manufacturer && <span>İstehsalçı: {product.manufacturer}</span>}
-                              {!product.brand && !product.manufacturer && <span>{product.sku}</span>}
+                              {vendorMap[product.vendorId] && <span>İstehsalçı: {vendorMap[product.vendorId]}</span>}
+                              {!product.brand && !vendorMap[product.vendorId] && <span>{product.sku}</span>}
                               {product.color && <span>Rəng: {product.color}</span>}
                             </div>
                             {formData.warehouseId && (
@@ -630,7 +653,7 @@ const NewSale = () => {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Anbar *</label>
+                  <label className="form-label">Mağaza *</label>
                   <select
                     className="form-control"
                     value={formData.warehouseId}
@@ -638,7 +661,7 @@ const NewSale = () => {
                     required
                   >
                     <option value="">Seçin...</option>
-                    {warehouses.map(warehouse => (
+                    {saleWarehouses.map(warehouse => (
                       <option key={warehouse._id} value={warehouse._id}>
                         {warehouse.name}
                       </option>
@@ -708,6 +731,24 @@ const NewSale = () => {
                     <span>-{formatCurrency(calculateTotalDiscount())}</span>
                   </div>
                 )}
+                <div className="new-sale-totals-row main" style={{ borderBottom: 'none' }}>
+                  <span>Ara cəm</span>
+                  <span>{formatCurrency(calculateSubtotal())}</span>
+                </div>
+                <div className="new-sale-totals-row" style={{ alignItems: 'center' }}>
+                  <span>Endirim (AZN)</span>
+                  <input
+                    type="number"
+                    className="form-control"
+                    style={{ width: '130px', textAlign: 'right' }}
+                    value={formData.discount}
+                    onChange={(e) => setFormData({ ...formData, discount: e.target.value })}
+                    step="0.01"
+                    min="0"
+                    max={calculateSubtotal()}
+                    placeholder="0"
+                  />
+                </div>
                 <div className="new-sale-totals-row main">
                   <span>Toplam</span>
                   <span>{formatCurrency(calculateTotal())}</span>
@@ -750,10 +791,10 @@ const NewSale = () => {
             <h3 style={{ marginTop: 0 }}>Satışı Tamamla</h3>
 
             <div className="new-sale-totals" style={{ marginBottom: '1rem' }}>
-              {calculateTotalDiscount() > 0 && (
+              {getDiscount() > 0 && (
                 <div className="new-sale-totals-row discount">
                   <span>Endirim</span>
-                  <span>-{formatCurrency(calculateTotalDiscount())}</span>
+                  <span>-{formatCurrency(getDiscount())}</span>
                 </div>
               )}
               <div className="new-sale-totals-row main">

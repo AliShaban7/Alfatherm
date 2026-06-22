@@ -99,6 +99,9 @@ export const authAPI = {
 export const productAPI = {
   getAll: (params) => api.get('/products', { params }),
   getOptions: () => api.get('/products/options'),
+  // Bulk import can take a while for thousands of rows — allow a longer timeout.
+  importProducts: (products) =>
+    api.post('/products/import', { products }, { timeout: 120000 }).then((r) => { clearApiCache(); return r; }),
   getById: (id) => api.get(`/products/${id}`),
   getWithStock: (id) => api.get(`/products/${id}/stock`),
   create: (data) => api.post('/products', data).then(r => { clearApiCache(); return r; }),

@@ -30,7 +30,7 @@ const Inventory = () => {
     vendorInvoiceNumber: '',
     items: [emptyEntryItem()],
     paymentStatus: 'paid',
-    paidAmount: 0,
+    paidAmount: '',
     dueDate: '',
     ownerId: ''
   });
@@ -47,39 +47,55 @@ const Inventory = () => {
     costPrice: ''
   });
 
-  useEffect(() => {
-    fetchData();
-  }, [selectedWarehouse, selectedOwnerId]);
+  // Cache of "products in this location" counts for the transfer modal.
+  const [whCounts, setWhCounts] = useState({});
 
-  const fetchData = async () => {
+  const loadWhCount = async (id) => {
+    if (!id || whCounts[id] !== undefined) return;
     try {
-      setLoading(true);
-      const [inventoryRes, warehousesRes, productsRes, vendorsRes] = await Promise.all([
-        selectedWarehouse 
-          ? inventoryAPI.getByWarehouse(selectedWarehouse)
-          : inventoryAPI.getAll(),
+      const res = await inventoryAPI.getByWarehouse(id);
+      setWhCounts((prev) => ({ ...prev, [id]: (res.data.data.items || []).length }));
+    } catch {
+      /* ignore count errors */
+    }
+  };
+
+  // Reference data (warehouses, products, vendors) rarely changes, so load it
+  // once — not on every warehouse switch. The owner filter for the entry modal
+  // is applied client-side (see entryProducts), so products needn't refetch.
+  useEffect(() => {
+    fetchReference();
+  }, []);
+
+  // Only the stock list depends on the selected warehouse.
+  useEffect(() => {
+    fetchInventory();
+  }, [selectedWarehouse]);
+
+  const fetchReference = async () => {
+    try {
+      const [warehousesRes, productsRes, vendorsRes] = await Promise.all([
         warehouseAPI.getAll(),
         productAPI.getAll({ limit: 1000 }),
         vendorAPI.getAll({ limit: 1000 })
       ]);
-
-      if (selectedWarehouse) {
-        setInventory(inventoryRes.data.data.items || []);
-      } else {
-        setInventory(inventoryRes.data.data || []);
-      }
-      setWarehouses(warehousesRes.data.data);
-      
-      // Filter products based on selected owner (for super owner in entry modal)
-      let filteredProducts = productsRes.data.products;
-      if (selectedOwnerId && isSuperOwner()) {
-        filteredProducts = filteredProducts.filter(p => p.ownerId === selectedOwnerId);
-      }
-      
-      setProducts(filteredProducts);
+      setWarehouses(warehousesRes.data.data || []);
+      setProducts(productsRes.data.products || []);
       setVendors(vendorsRes.data.vendors || []);
     } catch (error) {
       toast.error('Məlumatları yükləmək mümkün olmadı');
+    }
+  };
+
+  const fetchInventory = async () => {
+    try {
+      setLoading(true);
+      const res = selectedWarehouse
+        ? await inventoryAPI.getByWarehouse(selectedWarehouse)
+        : await inventoryAPI.getAll();
+      setInventory(selectedWarehouse ? (res.data.data.items || []) : (res.data.data || []));
+    } catch (error) {
+      toast.error('Stok məlumatını yükləmək mümkün olmadı');
     } finally {
       setLoading(false);
     }
@@ -107,7 +123,7 @@ const Inventory = () => {
       vendorInvoiceNumber: '',
       items: [emptyEntryItem()],
       paymentStatus: 'paid',
-      paidAmount: 0,
+      paidAmount: '',
       dueDate: '',
       ownerId: ''
     });
@@ -153,7 +169,7 @@ const Inventory = () => {
       setShowEntryModal(false);
       setSelectedOwnerId('');
       resetEntryForm();
-      fetchData();
+      fetchInventory();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Xəta baş verdi');
     }
@@ -165,6 +181,30 @@ const Inventory = () => {
       0
     );
 
+  // Mal Girişi product list filtered to the selected vendor's products only.
+  // A product matches if its vendorId equals the vendor (new id link) OR — for
+  // products created before the id link — its İstehsalçı name equals the
+  // vendor's name. Products tied to no vendor are hidden. Before a vendor is
+  // chosen, show everything.
+  const byName = (a, b) => (a.name || '').localeCompare(b.name || '', 'az');
+  const norm = (s) => String(s || '').trim().toLowerCase();
+  const selectedVendorName = norm(vendors.find((v) => v._id === entryForm.vendorId)?.name);
+
+  // For the super owner, scope entry products to the chosen owner (client-side).
+  const entryProducts = (selectedOwnerId && isSuperOwner())
+    ? products.filter((p) => p.ownerId === selectedOwnerId)
+    : products;
+
+  const vendorSortedProducts = !entryForm.vendorId
+    ? [...entryProducts].sort(byName)
+    : entryProducts
+        .filter((p) =>
+          p.vendorId
+            ? String(p.vendorId) === entryForm.vendorId
+            : p.manufacturer && norm(p.manufacturer) === selectedVendorName
+        )
+        .sort(byName);
+
   const handleTransfer = async (e) => {
     e.preventDefault();
     try {
@@ -172,7 +212,8 @@ const Inventory = () => {
       toast.success('Transfer uğurla tamamlandı');
       setShowTransferModal(false);
       setTransferForm({ productId: '', fromWarehouseId: '', toWarehouseId: '', quantity: 1 });
-      fetchData();
+      setWhCounts({}); // counts changed for the two locations
+      fetchInventory();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Xəta baş verdi');
     }
@@ -194,7 +235,7 @@ const Inventory = () => {
       toast.success('Stok yeniləndi');
       setShowEditModal(false);
       setEditingItem(null);
-      fetchData();
+      fetchInventory();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Xəta baş verdi');
     }
@@ -208,7 +249,7 @@ const Inventory = () => {
     try {
       await inventoryAPI.delete(item._id);
       toast.success('Stok silindi');
-      fetchData();
+      fetchInventory();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Xəta baş verdi');
     }
@@ -313,7 +354,7 @@ const Inventory = () => {
           </select>
         </div>
 
-        {loading ? (
+        {loading && inventory.length === 0 ? (
           <div className="loading">
             <div className="spinner"></div>
           </div>
@@ -485,7 +526,7 @@ const Inventory = () => {
                         onChange={(e) => setEntryForm({
                           ...entryForm,
                           paymentStatus: e.target.value,
-                          paidAmount: e.target.value === 'paid' ? getTotalAmount() : 0
+                          paidAmount: e.target.value === 'paid' ? getTotalAmount() : ''
                         })}
                       >
                         <option value="paid">Ödənilib</option>
@@ -501,10 +542,11 @@ const Inventory = () => {
                           type="number"
                           className="form-control"
                           value={entryForm.paidAmount}
-                          onChange={(e) => setEntryForm({ ...entryForm, paidAmount: parseFloat(e.target.value) || 0 })}
+                          onChange={(e) => setEntryForm({ ...entryForm, paidAmount: e.target.value === '' ? '' : parseFloat(e.target.value) || 0 })}
                           step="0.01"
                           min="0"
                           max={getTotalAmount()}
+                          placeholder="0"
                           required
                         />
                       </div>
@@ -551,7 +593,7 @@ const Inventory = () => {
                                   onChange={(e) => updateEntryItem(index, 'productId', e.target.value)}
                                 >
                                   <option value="">Seçin...</option>
-                                  {products.map(p => (
+                                  {vendorSortedProducts.map(p => (
                                     <option key={p._id} value={p._id}>{p.name} ({p.sku})</option>
                                   ))}
                                 </select>
@@ -636,32 +678,62 @@ const Inventory = () => {
                   </select>
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Mənbə Anbar *</label>
+                  <label className="form-label">Haradan (Anbar / Mağaza) *</label>
                   <select
                     className="form-control"
                     value={transferForm.fromWarehouseId}
-                    onChange={(e) => setTransferForm({ ...transferForm, fromWarehouseId: e.target.value })}
+                    onChange={(e) => {
+                      setTransferForm({ ...transferForm, fromWarehouseId: e.target.value });
+                      loadWhCount(e.target.value);
+                    }}
                     required
                   >
                     <option value="">Seçin...</option>
-                    {warehouses.map(wh => (
-                      <option key={wh._id} value={wh._id}>{wh.name}</option>
-                    ))}
+                    <optgroup label="Anbarlar">
+                      {warehouses.filter(wh => !wh.isStore && wh._id !== transferForm.toWarehouseId).map(wh => (
+                        <option key={wh._id} value={wh._id}>{wh.name}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Mağazalar">
+                      {warehouses.filter(wh => wh.isStore && wh._id !== transferForm.toWarehouseId).map(wh => (
+                        <option key={wh._id} value={wh._id}>{wh.name}</option>
+                      ))}
+                    </optgroup>
                   </select>
+                  {transferForm.fromWarehouseId && whCounts[transferForm.fromWarehouseId] !== undefined && (
+                    <div style={{ fontSize: '0.75rem', color: 'var(--gray-500)', marginTop: '4px' }}>
+                      Bu məkanda {whCounts[transferForm.fromWarehouseId]} məhsul var
+                    </div>
+                  )}
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Hədəf Anbar *</label>
+                  <label className="form-label">Hara (Anbar / Mağaza) *</label>
                   <select
                     className="form-control"
                     value={transferForm.toWarehouseId}
-                    onChange={(e) => setTransferForm({ ...transferForm, toWarehouseId: e.target.value })}
+                    onChange={(e) => {
+                      setTransferForm({ ...transferForm, toWarehouseId: e.target.value });
+                      loadWhCount(e.target.value);
+                    }}
                     required
                   >
                     <option value="">Seçin...</option>
-                    {warehouses.filter(wh => wh._id !== transferForm.fromWarehouseId).map(wh => (
-                      <option key={wh._id} value={wh._id}>{wh.name}</option>
-                    ))}
+                    <optgroup label="Anbarlar">
+                      {warehouses.filter(wh => !wh.isStore && wh._id !== transferForm.fromWarehouseId).map(wh => (
+                        <option key={wh._id} value={wh._id}>{wh.name}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Mağazalar">
+                      {warehouses.filter(wh => wh.isStore && wh._id !== transferForm.fromWarehouseId).map(wh => (
+                        <option key={wh._id} value={wh._id}>{wh.name}</option>
+                      ))}
+                    </optgroup>
                   </select>
+                  {transferForm.toWarehouseId && whCounts[transferForm.toWarehouseId] !== undefined && (
+                    <div style={{ fontSize: '0.75rem', color: 'var(--gray-500)', marginTop: '4px' }}>
+                      Bu məkanda {whCounts[transferForm.toWarehouseId]} məhsul var
+                    </div>
+                  )}
                 </div>
                 <div className="form-group">
                   <label className="form-label">Miqdar *</label>

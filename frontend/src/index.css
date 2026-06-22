@@ -5,6 +5,10 @@
 }
 
 :root {
+  /* Force light rendering of native controls (select popups, date pickers,
+     checkboxes, scrollbars) so the app looks the same regardless of the user's
+     OS dark-mode setting. */
+  color-scheme: light;
   --primary: #2563eb;
   --primary-dark: #1d4ed8;
   --primary-light: #3b82f6;
@@ -206,6 +210,20 @@ input, select, textarea {
 .form-group select.form-control:disabled,
 .modal select.form-control:disabled {
   cursor: not-allowed;
+}
+
+/* The dropdown list itself: force our white background + dark text + readable
+   group headers, so the popup never picks up the OS (dark) theme. */
+select.form-control option,
+select.form-control optgroup,
+select option,
+select optgroup {
+  background-color: #ffffff;
+  color: var(--gray-900);
+}
+select optgroup {
+  font-weight: 600;
+  color: var(--gray-500);
 }
 
 /* Tidy the native number spinner so qty/price fields don't look cramped. */
