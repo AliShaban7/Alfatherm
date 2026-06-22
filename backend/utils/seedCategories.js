@@ -2,62 +2,49 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 const Category = require('../models/Category');
 
-const connectDB = async () => {
+/**
+ * Upsert the product category list. Idempotent — run it any time to add new
+ * categories or fix a name; existing products keep working because the `code`
+ * never changes. Owners can also add/remove categories from the Kateqoriyalar
+ * screen (these seeded ones are marked isSystem).
+ *
+ *   node utils/seedCategories.js
+ */
+const CATEGORIES = [
+  { name: 'Elektrik', code: 'electric' },
+  { name: 'İstilik sistemləri', code: 'heating' },
+  { name: 'Su təchizatı / Santexnika', code: 'plumbing' },
+  { name: 'Hamam və aksesuarlar', code: 'bathroom' },
+  { name: 'Kanalizasiya', code: 'sewage' },
+  { name: 'Qazanlar / Kombi', code: 'boilers' },
+  { name: 'Radiatorlar', code: 'radiators' },
+  { name: 'Su qızdırıcıları', code: 'water_heaters' },
+  { name: 'Borular və fitinqlər', code: 'pipes_fittings' },
+  { name: 'Nasoslar', code: 'pumps' },
+  { name: 'Ventilyasiya / Kondisioner', code: 'hvac' },
+  { name: 'Alət və avadanlıq', code: 'tools' },
+  { name: 'Ümumi', code: 'general' }
+];
+
+const run = async () => {
   try {
     await mongoose.connect(process.env.MONGODB_URI);
-    console.log('MongoDB bağlantısı uğurlu');
   } catch (error) {
-    console.error('MongoDB bağlantı xətası:', error);
+    console.error('MongoDB bağlantı xətası:', error.message);
     process.exit(1);
   }
-};
 
-const seedCategories = async () => {
-  try {
-    await connectDB();
-
-    // Check if categories already exist
-    const count = await Category.countDocuments();
-    if (count > 0) {
-      console.log('Kateqoriyalar artıq mövcuddur');
-      process.exit(0);
-    }
-
-    const categories = [
-      {
-        name: 'Elektrik',
-        code: 'electric',
-        type: 'product',
-        isSystem: true
-      },
-      {
-        name: 'İsidici',
-        code: 'heating',
-        type: 'product',
-        isSystem: true
-      },
-      {
-        name: 'Hamam',
-        code: 'bathroom',
-        type: 'product',
-        isSystem: true
-      },
-      {
-        name: 'Ümumi',
-        code: 'general',
-        type: 'product',
-        isSystem: true
-      }
-    ];
-
-    await Category.insertMany(categories);
-    console.log('✅ Kateqoriyalar uğurla əlavə edildi');
-    
-    process.exit(0);
-  } catch (error) {
-    console.error('❌ Xəta:', error);
-    process.exit(1);
+  for (const c of CATEGORIES) {
+    await Category.updateOne(
+      { code: c.code, type: 'product' },
+      { $set: { name: c.name, type: 'product', isSystem: true } },
+      { upsert: true }
+    );
+    console.log(`  ✓ ${c.name} (${c.code})`);
   }
+
+  console.log(`\n✅ ${CATEGORIES.length} kateqoriya hazırdır.`);
+  process.exit(0);
 };
 
-seedCategories();
+run();

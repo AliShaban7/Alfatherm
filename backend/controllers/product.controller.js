@@ -42,6 +42,16 @@ exports.getOptions = async (req, res, next) => {
   }
 };
 
+// Bulk import products from an Excel file (rows normalized on the client).
+exports.importProducts = async (req, res, next) => {
+  try {
+    const result = await productService.importProducts(req.body.products, req.user, req.ownerId);
+    res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+};
+
 exports.getById = async (req, res, next) => {
   try {
     const product = await productService.getById(req.params.id, req.ownerId, req.canSeeCostPrice, req.user);

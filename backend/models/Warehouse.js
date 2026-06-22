@@ -18,6 +18,12 @@ const warehouseSchema = new mongoose.Schema({
     enum: Object.values(WAREHOUSE_TYPES),
     required: true
   },
+  // A store / selling point: only these are pickable in New Sale. Stock is moved
+  // into a store via Anbarlar Arası Transfer, then sold from it.
+  isStore: {
+    type: Boolean,
+    default: false
+  },
   branchId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Branch',

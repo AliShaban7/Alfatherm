@@ -1,8 +1,25 @@
 const Product = require('../models/Product');
 const Inventory = require('../models/Inventory');
-const { ROLES } = require('../config/constants');
+const Vendor = require('../models/Vendor');
+const Counter = require('../models/Counter');
+const { ROLES, OWNER_IDS } = require('../config/constants');
 
 const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const norm = (s) => String(s || '').trim().toLowerCase();
+
+// Excel import maps: accept either the code/value or the Azerbaijani label.
+// (Categories are resolved dynamically from the Category collection at import.)
+const UNIT_IMPORT = {
+  eded: 'eded', 'ədəd': 'eded', metr: 'metr', 'm2': 'm2', 'm²': 'm2',
+  'm3': 'm3', 'm³': 'm3', kg: 'kg', kq: 'kg', litr: 'litr',
+  'dəst': 'dəst', dest: 'dəst', qutu: 'qutu'
+};
+const OWNER_IMPORT = {
+  zaur: OWNER_IDS.ZAUR,
+  'ədalət': OWNER_IDS.ADALAT, 'adalət': OWNER_IDS.ADALAT, adalat: OWNER_IDS.ADALAT
+};
+// SKU owner-code derived the same way as Product.generateSKU.
+const skuCode = (ownerId) => (String(ownerId).split('_')[1] || String(ownerId)).slice(0, 3).toUpperCase() || 'GEN';
 
 // Trim the descriptive free-text fields so " Bosch" and "Bosch" don't become
 // distinct values. (The UI feeds these from a pick-or-add-new list, so the
@@ -92,6 +109,140 @@ class ProductService {
     return product;
   }
 
+  // Bulk-create products from an Excel import. `rows` are normalized objects:
+  // { name, category, unit, brand, manufacturer, country, color, costPrice,
+  //   minPrice, recommendedPrice, description, owner }. Validates each row,
+  // maps category/unit/vendor/owner, reserves SKUs in bulk, then insertMany.
+  // Returns { created, failed, errors:[{row,name,error}] }.
+  async importProducts(rows, user, defaultOwnerId) {
+    if (!Array.isArray(rows) || rows.length === 0) {
+      throw new Error('İdxal üçün məlumat yoxdur');
+    }
+    if (rows.length > 5000) {
+      throw new Error('Bir dəfəyə maksimum 5000 sətir idxal edilə bilər');
+    }
+
+    const isSuper = user.role === ROLES.SUPER_OWNER;
+
+    const Category = require('../models/Category');
+    const [vendors, existing, categories] = await Promise.all([
+      Vendor.find({}, 'name companyName').lean(),
+      Product.find({ isActive: true }, 'name ownerId').lean(),
+      Category.find({ type: 'product' }, 'name code').lean()
+    ]);
+    // İstehsalçı matches a vendor by its company name (Şirkət) or its name.
+    const vendorByName = new Map();
+    for (const v of vendors) {
+      if (v.companyName) vendorByName.set(norm(v.companyName), v._id);
+      if (v.name) vendorByName.set(norm(v.name), v._id);
+    }
+    // Category matches by its name or its code (from the Category collection).
+    const categoryByLabel = new Map();
+    for (const c of categories) {
+      categoryByLabel.set(norm(c.name), c.code);
+      categoryByLabel.set(norm(c.code), c.code);
+    }
+    const existingKey = new Set(existing.map((p) => `${p.ownerId}|${norm(p.name)}`));
+
+    const valid = [];
+    const errors = [];
+    const seen = new Set();
+
+    rows.forEach((r, i) => {
+      const rowNum = i + 2; // +1 header, +1 to 1-base
+      const fail = (error) => errors.push({ row: rowNum, name: r.name || '', error });
+
+      const name = String(r.name || '').trim();
+      if (!name) return fail('Ad boşdur');
+
+      let ownerId = defaultOwnerId;
+      if (isSuper) {
+        ownerId = OWNER_IMPORT[norm(r.owner)];
+        if (!ownerId) return fail('Sahib tapılmadı (Zaur və ya Ədalət yazın)');
+      }
+
+      const key = `${ownerId}|${norm(name)}`;
+      if (seen.has(key) || existingKey.has(key)) return fail('Bu adda məhsul artıq mövcuddur');
+
+      let category = 'general';
+      if (r.category) {
+        category = categoryByLabel.get(norm(r.category));
+        if (!category) return fail(`Kateqoriya yanlışdır: "${r.category}"`);
+      }
+      let unit = 'eded';
+      if (r.unit) {
+        unit = UNIT_IMPORT[norm(r.unit)];
+        if (!unit) return fail(`Vahid yanlışdır: "${r.unit}"`);
+      }
+
+      const costPrice = Number(r.costPrice) || 0;
+      const minPrice = Number(r.minPrice);
+      const recommendedPrice = Number(r.recommendedPrice);
+      if (!Number.isFinite(minPrice)) return fail('Min qiymət yanlışdır');
+      if (!Number.isFinite(recommendedPrice)) return fail('Tövsiyə qiymət yanlışdır');
+      if (minPrice < costPrice) return fail('Min qiymət maya dəyərindən az ola bilməz');
+      if (recommendedPrice < minPrice) return fail('Tövsiyə qiymət min qiymətdən az ola bilməz');
+
+      // İstehsalçı → vendor by name (optional; unmatched just leaves it empty).
+      const vendorId = r.manufacturer ? vendorByName.get(norm(r.manufacturer)) : undefined;
+
+      valid.push({
+        name,
+        brand: (r.brand || '').trim() || undefined,
+        country: (r.country || '').trim() || undefined,
+        color: (r.color || '').trim() || undefined,
+        description: (r.description || '').trim() || undefined,
+        category,
+        unit,
+        costPrice,
+        minPrice,
+        recommendedPrice,
+        vendorId,
+        ownerId,
+        createdBy: user._id
+      });
+      seen.add(key);
+    });
+
+    // Reserve a block of SKU numbers per owner-code (one counter bump each),
+    // then assign sequentially — avoids a DB round-trip per product.
+    const byCode = {};
+    for (const d of valid) {
+      const code = skuCode(d.ownerId);
+      (byCode[code] = byCode[code] || []).push(d);
+    }
+    for (const [code, docs] of Object.entries(byCode)) {
+      const prefix = `PRD-${code}`;
+      const counter = await Counter.findByIdAndUpdate(
+        `sku:${prefix}`,
+        { $inc: { seq: docs.length } },
+        { new: true, upsert: true }
+      );
+      let seq = counter.seq - docs.length;
+      for (const d of docs) {
+        seq += 1;
+        d.sku = `${prefix}-${String(seq).padStart(4, '0')}`;
+      }
+    }
+
+    let created = 0;
+    if (valid.length) {
+      // ordered:false → keep going past any individual row that still fails
+      // (e.g. a rare SKU/barcode clash); collect those as errors.
+      try {
+        const inserted = await Product.insertMany(valid, { ordered: false });
+        created = inserted.length;
+      } catch (err) {
+        created = err.insertedDocs?.length || 0;
+        (err.writeErrors || []).forEach((we) => {
+          errors.push({ row: '-', name: valid[we.index]?.name || '', error: 'Baza xətası (təkrar?)' });
+        });
+      }
+    }
+
+    return { created, failed: errors.length, errors: errors.slice(0, 300) };
+  }
+
   async getAll(ownerId, filters = {}, canSeeCostPrice = false, user = null) {
     const query = { isActive: true };
     
@@ -108,8 +259,9 @@ class ProductService {
       query.brand = filters.brand;
     }
 
-    if (filters.manufacturer) {
-      query.manufacturer = filters.manufacturer;
+    // İstehsalçı is the linked vendor (by id).
+    if (filters.vendorId) {
+      query.vendorId = filters.vendorId;
     }
 
     if (filters.search) {

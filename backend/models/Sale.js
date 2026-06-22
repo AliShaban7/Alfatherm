@@ -156,6 +156,12 @@ const saleSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  // Manual whole-sale discount applied at checkout (deducted from subtotal to
+  // get totalAmount). Distinct from the per-item recommended-vs-actual discount.
+  saleDiscount: {
+    type: Number,
+    default: 0
+  },
   totalAmount: {
     type: Number,
     required: true

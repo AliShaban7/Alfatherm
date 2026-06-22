@@ -61,9 +61,10 @@ class WarehouseService {
       query.branchId = filters.branchId;
     }
 
+    // No branch populate: the list/selectors never show the branch, so skip the
+    // extra lookup. Sort stores first, then by name.
     const warehouses = await Warehouse.find(query)
-      .populate('branchId', 'name code')
-      .sort({ type: 1, name: 1 })
+      .sort({ isStore: -1, name: 1 })
       .lean();
 
     return warehouses;
