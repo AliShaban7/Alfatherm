@@ -1,6 +1,43 @@
 const User = require('../models/User');
+const Branch = require('../models/Branch');
 
 class AuthService {
+  async getUsers() {
+    return User.find({}, '-password')
+      .populate('branchId', 'name code')
+      .sort({ role: 1, name: 1 })
+      .lean();
+  }
+
+  async updateUser(id, data) {
+    const allowed = ['name', 'phone', 'role', 'branchId', 'ownerId', 'isActive'];
+    const update = {};
+    allowed.forEach((k) => { if (data[k] !== undefined) update[k] = data[k]; });
+    const user = await User.findByIdAndUpdate(id, update, { new: true, runValidators: true })
+      .populate('branchId', 'name code')
+      .select('-password');
+    if (!user) throw new Error('İstifadəçi tapılmadı');
+    return user;
+  }
+
+  async resetPassword(id, newPassword) {
+    if (!newPassword || newPassword.length < 6) throw new Error('Şifrə minimum 6 simvol olmalıdır');
+    const user = await User.findById(id).select('+password');
+    if (!user) throw new Error('İstifadəçi tapılmadı');
+    user.password = newPassword;
+    await user.save();
+    return { message: 'Şifrə yeniləndi' };
+  }
+
+  async deleteUser(id, requestingUserId) {
+    if (String(id) === String(requestingUserId)) throw new Error('Öz hesabınızı silə bilməzsiniz');
+    const user = await User.findById(id);
+    if (!user) throw new Error('İstifadəçi tapılmadı');
+    user.isActive = false;
+    await user.save();
+    return { message: 'İstifadəçi deaktiv edildi' };
+  }
+
   async register(userData) {
     const existingUser = await User.findOne({ email: userData.email });
     if (existingUser) {
