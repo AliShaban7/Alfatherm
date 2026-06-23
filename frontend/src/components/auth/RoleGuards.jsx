@@ -33,3 +33,21 @@ export const OwnerRoute = ({ children }) => {
 
   return children;
 };
+
+export const SuperOwnerRoute = ({ children }) => {
+  const { isSuperOwner, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="loading" style={{ height: '40vh' }}>
+        <div className="spinner" />
+      </div>
+    );
+  }
+
+  if (!isSuperOwner()) {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+};

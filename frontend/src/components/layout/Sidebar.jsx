@@ -1,17 +1,19 @@
 import { NavLink } from 'react-router-dom';
-import { 
-  FiHome, 
-  FiShoppingCart, 
-  FiPackage, 
+import {
+  FiHome,
+  FiShoppingCart,
+  FiPackage,
   FiBox,
-  FiUsers, 
+  FiUsers,
   FiFileText,
   FiTruck,
   FiDollarSign,
   FiPieChart,
   FiCreditCard,
-  FiUserCheck
+  FiUserCheck,
+  FiSettings
 } from 'react-icons/fi';
+import { useAuth } from '../../context/AuthContext';
 import './Sidebar.css';
 
 const menuItems = [
@@ -31,6 +33,8 @@ const menuItems = [
 ];
 
 const Sidebar = ({ isOpen }) => {
+  const { isSuperOwner } = useAuth();
+
   return (
     <aside className={`sidebar ${isOpen ? 'open' : 'closed'}`}>
       <div className="sidebar-header">
@@ -38,13 +42,13 @@ const Sidebar = ({ isOpen }) => {
           <img src="/images/logo.png" alt="Alfatherm" className="logo-img" />
         </div>
       </div>
-      
+
       <nav className="sidebar-nav">
         {menuItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
-            className={({ isActive }) => 
+            className={({ isActive }) =>
               `sidebar-link ${isActive ? 'active' : ''}`
             }
             end={item.path === '/'}
@@ -53,6 +57,15 @@ const Sidebar = ({ isOpen }) => {
             <span className="sidebar-label">{item.label}</span>
           </NavLink>
         ))}
+        {isSuperOwner() && (
+          <NavLink
+            to="/users"
+            className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+          >
+            <FiSettings className="sidebar-icon" />
+            <span className="sidebar-label">İstifadəçilər</span>
+          </NavLink>
+        )}
       </nav>
       
       <div className="sidebar-footer">

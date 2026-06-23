@@ -887,12 +887,14 @@ const Inventory = () => {
                   <input
                     type="number"
                     className="form-control"
-                    value={transferForm.quantity}
-                    onChange={(e) => setTransferForm({ ...transferForm, quantity: parseInt(e.target.value) })}
+                    value={transferForm.quantity === 0 ? '' : transferForm.quantity}
+                    onChange={(e) => setTransferForm({ ...transferForm, quantity: Number(e.target.value) })}
                     min="1"
                     required
                   />
+            
                 </div>
+          
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-secondary" onClick={() => setShowTransferModal(false)}>
@@ -925,11 +927,12 @@ const Inventory = () => {
                   <input
                     type="number"
                     className="form-control"
-                    value={editForm.quantity}
+                    value={editForm.quantity === 0 ? '' : editForm.quantity}
                     onChange={(e) => setEditForm({ ...editForm, quantity: parseInt(e.target.value) || 0 })}
                     min="0"
                     required
                   />
+            
                 </div>
                 <div className="form-group">
                   <label className="form-label">Maya Dəyəri *</label>

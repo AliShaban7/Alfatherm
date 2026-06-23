@@ -96,6 +96,14 @@ export const authAPI = {
   changePassword: (data) => api.put('/auth/change-password', data)
 };
 
+export const userAPI = {
+  getAll: () => api.get('/auth/users'),
+  create: (data) => api.post('/auth/register', data),
+  update: (id, data) => api.put(`/auth/users/${id}`, data),
+  resetPassword: (id, newPassword) => api.post(`/auth/users/${id}/reset-password`, { newPassword }),
+  deactivate: (id) => api.delete(`/auth/users/${id}`)
+};
+
 export const productAPI = {
   getAll: (params) => api.get('/products', { params }),
   getOptions: () => api.get('/products/options'),
