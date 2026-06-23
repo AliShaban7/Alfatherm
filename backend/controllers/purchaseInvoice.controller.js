@@ -21,6 +21,19 @@ exports.create = async (req, res, next) => {
   }
 };
 
+exports.importInvoices = async (req, res, next) => {
+  try {
+    const result = await purchaseInvoiceService.importInvoices(
+      req.body.rows,
+      req.user,
+      req.canAccessMainWarehouse
+    );
+    res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+};
+
 exports.getAll = async (req, res, next) => {
   try {
     const result = await purchaseInvoiceService.getAll(req.ownerFilter, req.query);

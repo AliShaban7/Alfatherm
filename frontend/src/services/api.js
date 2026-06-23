@@ -114,6 +114,7 @@ export const inventoryAPI = {
   getByWarehouse: (warehouseId) => api.get(`/inventory/warehouse/${warehouseId}`),
   getTransactions: (params) => api.get('/inventory/transactions', { params }),
   productEntry: (data) => api.post('/inventory/entry', data).then(r => { clearApiCache(); return r; }),
+  importStock: (rows) => api.post('/inventory/import-stock', { rows }, { timeout: 120000 }).then(r => { clearApiCache(); return r; }),
   transfer: (data) => api.post('/inventory/transfer', data).then(r => { clearApiCache(); return r; }),
   update: (id, data) => api.put(`/inventory/${id}`, data).then(r => { clearApiCache(); return r; }),
   delete: (id) => api.delete(`/inventory/${id}`).then(r => { clearApiCache(); return r; })
@@ -134,7 +135,8 @@ export const saleAPI = {
 export const purchaseInvoiceAPI = {
   getAll: (params) => api.get('/purchase-invoices', { params }),
   getById: (id) => api.get(`/purchase-invoices/${id}`),
-  create: (data) => api.post('/purchase-invoices', data).then((r) => { clearApiCache(); return r; })
+  create: (data) => api.post('/purchase-invoices', data).then((r) => { clearApiCache(); return r; }),
+  importInvoices: (rows) => api.post('/purchase-invoices/import', { rows }, { timeout: 120000 }).then((r) => { clearApiCache(); return r; })
 };
 
 export const customerAPI = {

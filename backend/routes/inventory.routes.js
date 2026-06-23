@@ -11,6 +11,8 @@ router.use(ownerDataIsolation);
 router.use(canSeeCostPrice);
 router.use(canAccessMainWarehouse);
 
+router.post('/import-stock', ownerOnly, inventoryController.importStock);
+
 router.post(
   '/entry',
   ownerOnly,

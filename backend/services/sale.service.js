@@ -361,7 +361,7 @@ class SaleService {
       if (normalizedExpenses.length > 0) {
         const expenseDocs = [];
         for (const e of normalizedExpenses) {
-          const label = SALE_EXPENSE_LABELS[e.category] || e.category;
+          const label = (e.category === 'other' && e.note?.trim()) ? e.note.trim() : (SALE_EXPENSE_LABELS[e.category] || e.category);
           for (const s of this._splitAmountByOwner(e.amount, ownerSubtotals, totalAmount)) {
             if (s.amount <= 0) continue;
             expenseDocs.push({

@@ -28,6 +28,7 @@ const createValidation = [
 ];
 
 router.post('/', ownerOnly, createValidation, validateRequest, purchaseInvoiceController.create);
+router.post('/import', ownerOnly, purchaseInvoiceController.importInvoices);
 router.get('/', purchaseInvoiceController.getAll);
 router.get('/:id', purchaseInvoiceController.getById);
 

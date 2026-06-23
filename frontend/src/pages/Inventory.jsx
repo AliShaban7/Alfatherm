@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
-import { FiPackage, FiArrowRight, FiPlus, FiEdit2, FiTrash2, FiDownload } from 'react-icons/fi';
+import { useState, useEffect, useRef } from 'react';
+import { FiPackage, FiArrowRight, FiPlus, FiEdit2, FiTrash2, FiDownload, FiUpload } from 'react-icons/fi';
 import { inventoryAPI, warehouseAPI, productAPI, vendorAPI, purchaseInvoiceAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
 import { BUSINESS_OWNERS } from '../config/owners';
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 const Inventory = () => {
   const [inventory, setInventory] = useState([]);
@@ -49,6 +50,9 @@ const Inventory = () => {
 
   // Cache of "products in this location" counts for the transfer modal.
   const [whCounts, setWhCounts] = useState({});
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const stockImportRef = useRef(null);
 
   const loadWhCount = async (id) => {
     if (!id || whCounts[id] !== undefined) return;
@@ -267,6 +271,118 @@ const Inventory = () => {
     }, 0);
   };
 
+  const downloadStockTemplate = async () => {
+    const warehouseNames = warehouses.map((w) => w.name).filter(Boolean);
+    const ROWS = 1000;
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Stok');
+    const lists = wb.addWorksheet('Siyahılar', { state: 'veryHidden' });
+    warehouseNames.forEach((name, i) => { lists.getCell(`A${i + 1}`).value = name; });
+
+    const headers = ['SKU', 'Məhsul adı', 'Anbar', 'Miqdar', 'Maya dəyəri (AZN)'];
+    ws.addRow(headers);
+    const widths = [16, 36, 24, 12, 20];
+    widths.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+    const headerRow = ws.getRow(1);
+    headerRow.height = 22;
+    headerRow.eachCell((cell) => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
+      cell.font = { color: { argb: 'FFFFFFFF' }, bold: true };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+      };
+    });
+
+    // Example row using first product from current inventory list.
+    const exampleItem = inventory[0];
+    ws.addRow([
+      exampleItem?.product?.sku || 'ALF-0001',
+      exampleItem?.product?.name || 'Nümunə məhsul',
+      warehouseNames[0] || '',
+      10,
+      exampleItem?.costPrice || 5.00
+    ]);
+
+    // Strict dropdown for Anbar column (C).
+    if (warehouseNames.length) {
+      const formula = `Siyahılar!$A$1:$A$${warehouseNames.length}`;
+      for (let r = 2; r <= ROWS; r++) {
+        ws.getCell(`C${r}`).dataValidation = {
+          type: 'list', allowBlank: true, formulae: [formula],
+          showErrorMessage: true, error: 'Yalnız mövcud anbarları seçin', errorTitle: 'Yanlış anbar'
+        };
+      }
+    }
+
+    const help = wb.addWorksheet('Təlimat');
+    help.getColumn(1).width = 22;
+    help.getColumn(2).width = 60;
+    [
+      ['Sahə', 'İzah'],
+      ['SKU', 'Məhsul SKU kodu — bununla məhsul axtarılır'],
+      ['Məhsul adı', 'SKU tapılmadıqda ad ilə axtarılır'],
+      ['Anbar', 'Açılan siyahıdan anbar seçin — MƏCBURİ'],
+      ['Miqdar', 'Stok miqdarı — MƏCBURİ (mənfi olmaz)'],
+      ['Maya dəyəri', 'Vahid maya dəyəri — boş saxlaya bilərsiniz'],
+    ].forEach((r) => help.addRow(r));
+    help.getRow(1).font = { bold: true };
+
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'stok_idxal_sablonu.xlsx';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportStock = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array' });
+      const ws = wb.Sheets['Stok'] || wb.Sheets[wb.SheetNames[0]];
+      const rawRows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+      const rows = rawRows
+        .map((r) => ({
+          sku: String(r['SKU'] || '').trim(),
+          name: String(r['Məhsul adı'] || '').trim(),
+          warehouse: String(r['Anbar'] || '').trim(),
+          quantity: r['Miqdar'],
+          costPrice: r['Maya dəyəri (AZN)'] === '' ? '' : r['Maya dəyəri (AZN)']
+        }))
+        .filter((r) => r.warehouse && (r.sku || r.name));
+
+      if (!rows.length) {
+        toast.warning('Faylda doldurulmuş sətir tapılmadı');
+        return;
+      }
+
+      const res = await inventoryAPI.importStock(rows);
+      const result = res.data.data;
+      setImportResult(result);
+      if (result.applied) toast.success(`${result.applied} sətir tətbiq edildi`);
+      if (result.failed) toast.error(`${result.failed} sətir idxal edilmədi`);
+      fetchInventory();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'İdxal zamanı xəta baş verdi');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const exportToExcel = () => {
     if (!inventory.length) {
       toast.warning('Eksport üçün məlumat yoxdur');
@@ -304,20 +420,32 @@ const Inventory = () => {
           <p className="page-subtitle">Stok idarəetməsi</p>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
-          <button 
-            className="btn" 
+          <button
+            className="btn"
             onClick={exportToExcel}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              background: '#10b981',
-              color: 'white',
-              border: 'none'
-            }}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#10b981', color: 'white', border: 'none' }}
           >
             <FiDownload /> Excel
           </button>
+          {isOwner() && (<>
+            <button
+              className="btn btn-secondary"
+              onClick={downloadStockTemplate}
+              title="Stok idxal şablonu"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+            >
+              <FiDownload /> Şablon
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={() => stockImportRef.current?.click()}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+              disabled={importing}
+            >
+              <FiUpload /> {importing ? 'İdxal olunur...' : 'Stok idxal'}
+            </button>
+            <input type="file" ref={stockImportRef} accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleImportStock} />
+          </>)}
           {isOwner() && (
             <button 
               className="btn btn-primary" 
@@ -338,6 +466,25 @@ const Inventory = () => {
           </button>
         </div>
       </div>
+
+      {importResult && (
+        <div className="card" style={{ marginBottom: '1rem', borderLeft: `4px solid ${importResult.failed ? 'var(--warning, #d97706)' : 'var(--success, #16a34a)'}` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>
+              İdxal nəticəsi: <strong>{importResult.applied}</strong> sətir tətbiq edildi
+              {importResult.failed ? `, ${importResult.failed} uğursuz` : ''}
+            </span>
+            <button className="btn btn-sm btn-secondary" onClick={() => setImportResult(null)}>✕</button>
+          </div>
+          {importResult.errors?.length > 0 && (
+            <ul style={{ marginTop: '0.5rem', paddingLeft: '1.25rem', fontSize: '0.8125rem', color: 'var(--danger)' }}>
+              {importResult.errors.map((e, i) => (
+                <li key={i}>Sətir {e.row}{e.name ? ` (${e.name})` : ''}: {e.error}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       <div className="card">
         <div style={{ marginBottom: '1rem' }}>

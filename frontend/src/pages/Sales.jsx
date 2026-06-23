@@ -397,7 +397,7 @@ const Sales = () => {
                       )}
                       {(detailSale.saleExpenses || []).map((e, i) => (
                         <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', fontSize: '0.875rem' }}>
-                          <span>{SALE_EXPENSE_LABELS[e.category] || e.category}{e.note ? ` (${e.note})` : ''}</span>
+                          <span>{(e.category === 'other' && e.note) ? e.note : (SALE_EXPENSE_LABELS[e.category] || e.category)}</span>
                           <span>{formatCurrency(e.amount)}</span>
                         </div>
                       ))}

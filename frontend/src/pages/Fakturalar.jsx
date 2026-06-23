@@ -1,9 +1,27 @@
-import { useState, useEffect, useCallback } from 'react';
-import { FiEye, FiPrinter } from 'react-icons/fi';
-import { purchaseInvoiceAPI } from '../services/api';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { FiEye, FiPrinter, FiDownload, FiUpload } from 'react-icons/fi';
+import { purchaseInvoiceAPI, vendorAPI, warehouseAPI, productAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { format } from 'date-fns';
 import { printInvoice } from '../utils/invoicePrint';
+import { useAuth } from '../context/AuthContext';
+import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
+
+// Excel header → row-object key. Mirrors the template column order.
+const IMPORT_COLUMNS = [
+  ['Vendor', 'vendor'],
+  ['Anbar', 'warehouse'],
+  ['Faktura No', 'faktura'],
+  ['Ödəniş Statusu', 'status'],
+  ['Ödənilmiş məbləğ', 'paidAmount'],
+  ['Məhsul', 'product'],
+  ['SKU', 'sku'],
+  ['Miqdar', 'quantity'],
+  ['Maya dəyəri (AZN)', 'costPrice']
+];
+
+const STATUS_OPTIONS = ['Ödənilib', 'Qismən ödənilib', 'Borc'];
 
 const STATUS = {
   paid: { label: 'Ödənilib', color: 'var(--success, #16a34a)' },
@@ -12,10 +30,14 @@ const STATUS = {
 };
 
 const Fakturalar = () => {
+  const { isOwner } = useAuth();
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pagination, setPagination] = useState({ page: 1, pages: 1 });
   const [detail, setDetail] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const importRef = useRef(null);
 
   const formatCurrency = (amount) =>
     new Intl.NumberFormat('az-AZ', { minimumFractionDigits: 2 }).format(amount || 0) + ' AZN';
@@ -66,6 +88,150 @@ const Fakturalar = () => {
     }
   };
 
+  // Build an Excel template with live dropdowns: Vendor, Anbar, Ödəniş Statusu
+  // and Məhsul are all picked from existing data so there are no typos. Rows
+  // that share the same "Faktura No" merge into one invoice on import.
+  const downloadTemplate = async () => {
+    let vendors = [], warehouses = [], products = [];
+    try {
+      const [vRes, wRes, pRes] = await Promise.all([
+        vendorAPI.getAll({ limit: 1000 }),
+        warehouseAPI.getAll(),
+        productAPI.getAll({ limit: 5000 })
+      ]);
+      vendors = vRes.data.vendors || [];
+      warehouses = wRes.data.data || [];
+      products = pRes.data.products || [];
+    } catch {
+      toast.error('Şablon üçün məlumatları yükləmək mümkün olmadı');
+      return;
+    }
+
+    const vendorNames = vendors.map((v) => v.companyName || v.name).filter(Boolean);
+    const warehouseNames = warehouses.map((w) => w.name).filter(Boolean);
+    const productNames = products.map((p) => p.name).filter(Boolean);
+    const ROWS = 1000;
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Fakturalar');
+    const lists = wb.addWorksheet('Siyahılar', { state: 'veryHidden' });
+    const writeList = (col, values) => values.forEach((v, i) => { lists.getCell(`${col}${i + 1}`).value = v; });
+    writeList('A', vendorNames);
+    writeList('B', warehouseNames);
+    writeList('C', STATUS_OPTIONS);
+    writeList('D', productNames);
+
+    const headers = IMPORT_COLUMNS.map((c) => c[0]);
+    ws.addRow(headers);
+    const widths = [22, 20, 14, 18, 16, 32, 14, 10, 16];
+    widths.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+    const headerRow = ws.getRow(1);
+    headerRow.height = 22;
+    headerRow.eachCell((cell) => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
+      cell.font = { color: { argb: 'FFFFFFFF' }, bold: true };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+      };
+    });
+
+    // Two example lines that share one Faktura No → a single 2-line invoice.
+    ws.addRow([vendorNames[0] || '', warehouseNames[0] || '', 'A-1001', 'Ödənilib', '', productNames[0] || '', '', 10, 5.50]);
+    ws.addRow([vendorNames[0] || '', warehouseNames[0] || '', 'A-1001', 'Ödənilib', '', productNames[1] || '', '', 4, 12.00]);
+
+    const addList = (colLetter, listCol, count) => {
+      if (!count) return;
+      const formula = `Siyahılar!$${listCol}$1:$${listCol}$${count}`;
+      for (let r = 2; r <= ROWS; r++) {
+        ws.getCell(`${colLetter}${r}`).dataValidation = {
+          type: 'list', allowBlank: true, formulae: [formula],
+          showErrorMessage: true, error: 'Yalnız siyahıdan seçin', errorTitle: 'Yanlış dəyər'
+        };
+      }
+    };
+    addList('A', 'A', vendorNames.length);     // Vendor
+    addList('B', 'B', warehouseNames.length);  // Anbar
+    addList('D', 'C', STATUS_OPTIONS.length);  // Ödəniş Statusu
+    addList('F', 'D', productNames.length);    // Məhsul
+
+    // Reference sheet: SKU ↔ ad (so SKU column can be filled precisely).
+    const ref = wb.addWorksheet('Məhsul kodları');
+    ref.addRow(['SKU', 'Məhsul adı']);
+    ref.getRow(1).font = { bold: true };
+    ref.getColumn(1).width = 16;
+    ref.getColumn(2).width = 40;
+    products.forEach((p) => ref.addRow([p.sku || '', p.name || '']));
+
+    const help = wb.addWorksheet('Təlimat');
+    help.getColumn(1).width = 22;
+    help.getColumn(2).width = 64;
+    [
+      ['Sahə', 'İzah'],
+      ['Vendor', 'Açılan siyahıdan seçin — MƏCBURİ'],
+      ['Anbar', 'Açılan siyahıdan seçin — MƏCBURİ'],
+      ['Faktura No', 'Eyni Faktura No olan sətirlər bir fakturaya birləşir. Boş olarsa hər sətir ayrı faktura olur'],
+      ['Ödəniş Statusu', 'Ödənilib / Qismən ödənilib / Borc — MƏCBURİ'],
+      ['Ödənilmiş məbləğ', 'Yalnız "Qismən ödənilib" üçün rəqəm'],
+      ['Məhsul', 'Açılan siyahıdan məhsul seçin'],
+      ['SKU', 'İstəyə görə — dəqiqlik üçün məhsul SKU kodu (varsa ad əvəzinə işlədilir)'],
+      ['Miqdar', 'Rəqəm — minimum 1'],
+      ['Maya dəyəri', 'Vahid maya dəyəri (AZN) — MƏCBURİ']
+    ].forEach((r) => help.addRow(r));
+    help.getRow(1).font = { bold: true };
+
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'faktura_idxal_sablonu.xlsx';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array' });
+      const ws = wb.Sheets['Fakturalar'] || wb.Sheets[wb.SheetNames[0]];
+      const rawRows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+      const rows = rawRows
+        .map((row) => {
+          const obj = {};
+          IMPORT_COLUMNS.forEach(([header, field]) => { obj[field] = row[header]; });
+          return obj;
+        })
+        .filter((r) => String(r.product || '').trim() || String(r.sku || '').trim());
+
+      if (!rows.length) {
+        toast.warning('Faylda doldurulmuş sətir tapılmadı');
+        return;
+      }
+
+      const res = await purchaseInvoiceAPI.importInvoices(rows);
+      const result = res.data.data;
+      setImportResult(result);
+      if (result.created) toast.success(`${result.created} faktura yaradıldı`);
+      if (result.failed) toast.error(`${result.failed} faktura yaradılmadı`);
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'İdxal zamanı xəta baş verdi');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <div>
       <div className="page-header">
@@ -73,7 +239,47 @@ const Fakturalar = () => {
           <h1 className="page-title">Fakturalar</h1>
           <p className="page-subtitle">Mal girişi fakturaları və ödəniş statusu</p>
         </div>
+        {isOwner() && (
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button
+              className="btn btn-secondary"
+              onClick={downloadTemplate}
+              title="Faktura idxal şablonu"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+            >
+              <FiDownload /> Şablon
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={() => importRef.current?.click()}
+              disabled={importing}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+            >
+              <FiUpload /> {importing ? 'İdxal olunur...' : 'Faktura idxal'}
+            </button>
+            <input type="file" ref={importRef} accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleImportFile} />
+          </div>
+        )}
       </div>
+
+      {importResult && (
+        <div className="card" style={{ marginBottom: '1rem', borderLeft: `4px solid ${importResult.failed ? 'var(--warning, #d97706)' : 'var(--success, #16a34a)'}` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>
+              İdxal nəticəsi: <strong>{importResult.created}</strong> faktura yaradıldı
+              {importResult.failed ? `, ${importResult.failed} uğursuz` : ''}
+            </span>
+            <button className="btn btn-sm btn-secondary" onClick={() => setImportResult(null)}>✕</button>
+          </div>
+          {importResult.errors?.length > 0 && (
+            <ul style={{ marginTop: '0.5rem', paddingLeft: '1.25rem', fontSize: '0.8125rem', color: 'var(--danger)' }}>
+              {importResult.errors.map((e, i) => (
+                <li key={i}>{e.faktura}: {e.error}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       <div className="card">
         {loading && invoices.length === 0 ? (

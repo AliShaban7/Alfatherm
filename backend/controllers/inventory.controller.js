@@ -1,6 +1,16 @@
 const inventoryService = require('../services/inventory.service');
 const { ROLES } = require('../config/constants');
 
+// Bulk stock load from Excel (rows normalized on the client).
+exports.importStock = async (req, res, next) => {
+  try {
+    const result = await inventoryService.importStock(req.body.rows, req.user);
+    res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+};
+
 exports.productEntry = async (req, res, next) => {
   try {
     // Super owner can specify ownerId in body, otherwise use req.ownerId

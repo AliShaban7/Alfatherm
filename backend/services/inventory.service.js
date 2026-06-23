@@ -463,6 +463,81 @@ class InventoryService {
 
     return { success: true };
   }
+
+  // Bulk stock load from Excel. Each row: { sku, name, warehouse, quantity,
+  // costPrice }. Resolves product (by SKU, then name) and warehouse (by name),
+  // then SETS the stock quantity (and cost, if given) for that product in that
+  // warehouse. One bulk upsert + one transaction insert. Returns a summary.
+  async importStock(rows, user) {
+    if (!Array.isArray(rows) || rows.length === 0) {
+      throw new Error('İdxal üçün məlumat yoxdur');
+    }
+    if (rows.length > 10000) {
+      throw new Error('Bir dəfəyə maksimum 10000 sətir idxal edilə bilər');
+    }
+    const norm = (s) => String(s || '').trim().toLowerCase();
+    const isSuper = user.role === ROLES.SUPER_OWNER;
+
+    const [products, warehouses] = await Promise.all([
+      Product.find({ isActive: true }, 'sku name ownerId').lean(),
+      Warehouse.find({ isActive: true }, 'name').lean()
+    ]);
+    const bySku = new Map(products.map((p) => [String(p.sku).toUpperCase(), p]));
+    const byName = new Map(products.map((p) => [norm(p.name), p]));
+    const whByName = new Map(warehouses.map((w) => [norm(w.name), w._id]));
+
+    const ops = [];
+    const txns = [];
+    const errors = [];
+
+    rows.forEach((r, i) => {
+      const rowNum = i + 2;
+      const fail = (error) => errors.push({ row: rowNum, name: r.sku || r.name || '', error });
+
+      let product = r.sku ? bySku.get(String(r.sku).trim().toUpperCase()) : null;
+      if (!product && r.name) product = byName.get(norm(r.name));
+      if (!product) return fail('Məhsul tapılmadı (SKU və ya ad)');
+      if (!isSuper && product.ownerId !== user.ownerId) return fail('Bu məhsul sizə aid deyil');
+
+      const warehouseId = whByName.get(norm(r.warehouse));
+      if (!warehouseId) return fail(`Anbar tapılmadı: "${r.warehouse || ''}"`);
+
+      const quantity = Number(r.quantity);
+      if (!Number.isFinite(quantity) || quantity < 0) return fail('Miqdar yanlışdır');
+
+      const hasCost = r.costPrice !== '' && r.costPrice != null;
+      const costPrice = Number(r.costPrice);
+      if (hasCost && (!Number.isFinite(costPrice) || costPrice < 0)) return fail('Maya dəyəri yanlışdır');
+
+      const set = { quantity, lastUpdated: new Date() };
+      if (hasCost) set.costPrice = costPrice;
+
+      ops.push({
+        updateOne: {
+          filter: { productId: product._id, warehouseId, ownerId: product.ownerId },
+          update: { $set: set },
+          upsert: true
+        }
+      });
+      txns.push({
+        type: INVENTORY_TRANSACTION_TYPES.IN,
+        productId: product._id,
+        ownerId: product.ownerId,
+        toWarehouseId: warehouseId,
+        quantity,
+        costPrice: hasCost ? costPrice : undefined,
+        note: 'Excel ilə stok yükləndi',
+        createdBy: user._id
+      });
+    });
+
+    if (ops.length) {
+      await Inventory.bulkWrite(ops, { ordered: false });
+      await InventoryTransaction.insertMany(txns, { ordered: false });
+    }
+
+    return { applied: ops.length, failed: errors.length, errors: errors.slice(0, 300) };
+  }
 }
 
 module.exports = new InventoryService();

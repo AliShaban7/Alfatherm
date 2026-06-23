@@ -6,7 +6,7 @@ const Warehouse = require('../models/Warehouse');
 const Inventory = require('../models/Inventory');
 const InventoryTransaction = require('../models/InventoryTransaction');
 const Creditor = require('../models/Creditor');
-const { INVENTORY_TRANSACTION_TYPES, WAREHOUSE_TYPES } = require('../config/constants');
+const { INVENTORY_TRANSACTION_TYPES, WAREHOUSE_TYPES, ROLES } = require('../config/constants');
 
 class PurchaseInvoiceService {
   // Create a purchase invoice: validate, update stock (weighted-average cost),
@@ -168,6 +168,99 @@ class PurchaseInvoiceService {
     } finally {
       session.endSession();
     }
+  }
+
+  // Bulk import purchase invoices from Excel. Each row is one product line;
+  // rows sharing the same "Faktura No" merge into a single invoice. Resolves
+  // vendor (by company/name), warehouse (by name) and products (by SKU/name),
+  // then reuses create() per invoice so stock, creditors and vendor stats are
+  // handled identically to manual entry. Returns a per-invoice summary.
+  async importInvoices(rows, user, canAccessMainWarehouse) {
+    if (!Array.isArray(rows) || rows.length === 0) {
+      throw new Error('İdxal üçün məlumat yoxdur');
+    }
+    if (rows.length > 5000) {
+      throw new Error('Bir dəfəyə maksimum 5000 sətir idxal edilə bilər');
+    }
+    const norm = (s) => String(s || '').trim().toLowerCase();
+    const isSuper = user.role === ROLES.SUPER_OWNER;
+
+    const [vendors, warehouses, products] = await Promise.all([
+      Vendor.find({}, 'name companyName').lean(),
+      Warehouse.find({ isActive: true }, 'name').lean(),
+      Product.find({ isActive: true }, 'sku name ownerId').lean()
+    ]);
+
+    const vendorByName = new Map();
+    vendors.forEach((v) => {
+      if (v.companyName && !vendorByName.has(norm(v.companyName))) vendorByName.set(norm(v.companyName), v);
+      if (v.name && !vendorByName.has(norm(v.name))) vendorByName.set(norm(v.name), v);
+    });
+    const whByName = new Map(warehouses.map((w) => [norm(w.name), w]));
+    const prodBySku = new Map(products.map((p) => [String(p.sku).toUpperCase(), p]));
+    const prodByName = new Map(products.map((p) => [norm(p.name), p]));
+
+    const STATUS_MAP = {
+      'ödənilib': 'paid', 'paid': 'paid',
+      'qismən ödənilib': 'partial', 'qismən': 'partial', 'partial': 'partial',
+      'borc': 'unpaid', 'ödənilməyib': 'unpaid', 'unpaid': 'unpaid'
+    };
+
+    // Group rows: same Faktura No → one invoice; blank Faktura No → its own row.
+    const groups = new Map();
+    rows.forEach((r, i) => {
+      const faktura = String(r.faktura || '').trim();
+      const key = faktura ? `f:${norm(faktura)}` : `row:${i}`;
+      if (!groups.has(key)) groups.set(key, { faktura, rows: [] });
+      groups.get(key).rows.push({ ...r, _row: i + 2 });
+    });
+
+    const errors = [];
+    let created = 0;
+
+    for (const g of groups.values()) {
+      const head = g.rows[0];
+      const groupLabel = g.faktura || `Sətir ${head._row}`;
+      try {
+        const vendor = vendorByName.get(norm(head.vendor));
+        if (!vendor) throw new Error(`Vendor tapılmadı: "${head.vendor || ''}"`);
+        const wh = whByName.get(norm(head.warehouse));
+        if (!wh) throw new Error(`Anbar tapılmadı: "${head.warehouse || ''}"`);
+        const paymentStatus = STATUS_MAP[norm(head.status)] || 'paid';
+
+        const items = [];
+        let ownerId = null;
+        for (const row of g.rows) {
+          let product = row.sku ? prodBySku.get(String(row.sku).trim().toUpperCase()) : null;
+          if (!product && row.product) product = prodByName.get(norm(row.product));
+          if (!product) throw new Error(`Sətir ${row._row}: məhsul tapılmadı`);
+          if (!isSuper && product.ownerId !== user.ownerId) throw new Error(`Sətir ${row._row}: məhsul sizə aid deyil`);
+          if (ownerId && ownerId !== product.ownerId) throw new Error('Bir fakturada məhsullar fərqli sahibə aiddir');
+          ownerId = product.ownerId;
+
+          const quantity = Number(row.quantity);
+          const costPrice = Number(row.costPrice);
+          if (!Number.isFinite(quantity) || quantity < 1) throw new Error(`Sətir ${row._row}: miqdar yanlışdır`);
+          if (!Number.isFinite(costPrice) || costPrice < 0) throw new Error(`Sətir ${row._row}: maya dəyəri yanlışdır`);
+          items.push({ productId: product._id, quantity, costPrice });
+        }
+
+        await this.create({
+          vendorId: vendor._id,
+          warehouseId: wh._id,
+          items,
+          vendorInvoiceNumber: g.faktura || undefined,
+          paymentStatus,
+          paidAmount: paymentStatus === 'partial' ? Number(head.paidAmount) || 0 : undefined,
+          note: 'Excel ilə idxal'
+        }, ownerId, user._id, isSuper ? true : canAccessMainWarehouse);
+        created++;
+      } catch (e) {
+        errors.push({ faktura: groupLabel, error: e.message });
+      }
+    }
+
+    return { created, failed: errors.length, errors: errors.slice(0, 300) };
   }
 
   async getAll(ownerFilter = {}, filters = {}) {

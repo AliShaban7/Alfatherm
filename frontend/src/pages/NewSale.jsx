@@ -336,7 +336,8 @@ const NewSale = () => {
     if (saleExpenses.length > 0) {
       payload.saleExpenses = saleExpenses.map((e) => ({
         category: e.category,
-        amount: parseFloat(e.amount) || 0
+        amount: parseFloat(e.amount) || 0,
+        ...(e.note?.trim() ? { note: e.note.trim() } : {})
       }));
     }
 
@@ -861,10 +862,10 @@ const NewSale = () => {
             <div className="form-group">
               <label className="form-label">Satış xərcləri</label>
               {saleExpenses.map((row, index) => (
-                <div key={index} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                <div key={index} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
                   <select
                     className="form-control"
-                    style={{ flex: 2 }}
+                    style={{ flex: '2 1 120px' }}
                     value={row.category}
                     onChange={(e) => updateExpenseRow(index, 'category', e.target.value)}
                   >
@@ -872,10 +873,20 @@ const NewSale = () => {
                       <option key={o.value} value={o.value}>{o.label}</option>
                     ))}
                   </select>
+                  {row.category === 'other' && (
+                    <input
+                      type="text"
+                      className="form-control"
+                      style={{ flex: '3 1 160px' }}
+                      placeholder="Xərc adı"
+                      value={row.note || ''}
+                      onChange={(e) => updateExpenseRow(index, 'note', e.target.value)}
+                    />
+                  )}
                   <input
                     type="number"
                     className="form-control"
-                    style={{ flex: 1 }}
+                    style={{ flex: '1 1 80px' }}
                     placeholder="Məbləğ"
                     step="0.01"
                     min="0"

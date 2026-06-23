@@ -109,7 +109,7 @@ const Dashboard = () => {
             <FiDollarSign />
           </div>
           <div className="stat-card-content">
-            <div className="stat-card-value" style={{ color: 'white' }}>{formatCurrency(data?.today?.totalAmount || 0)}</div>
+            <div className="stat-card-value" style={{ color: 'white' }}>{formatCurrency(data?.today?.totalAmount|| 0)}</div>
             <div className="stat-card-label" style={{ color: 'rgba(255, 255, 255, 0.9)' }}>Bugünkü Dövriyyə</div>
           </div>
         </div>
