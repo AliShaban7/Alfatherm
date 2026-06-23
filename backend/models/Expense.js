@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const Counter = require('./Counter');
 const { EXPENSE_CATEGORIES } = require('../config/constants');
 
 const expenseSchema = new mongoose.Schema({
@@ -107,13 +108,19 @@ expenseSchema.index({ branchId: 1, date: -1 });
 expenseSchema.index({ category: 1, date: -1 });
 expenseSchema.index({ ownerId: 1, date: -1 });
 
-// Auto-generate expense number before saving
+// Auto-generate expense number before saving. Uses an atomic Counter instead of
+// countDocuments()+1, which raced: two concurrent creates read the same count
+// and produced the same (unique) expenseNumber, so the second insert threw.
 expenseSchema.pre('save', async function(next) {
-  if (this.isNew && !this.expenseNumber) {
-    const count = await mongoose.model('Expense').countDocuments();
-    this.expenseNumber = `XRC-${String(count + 1).padStart(6, '0')}`;
+  try {
+    if (this.isNew && !this.expenseNumber) {
+      const seq = await Counter.next('expense');
+      this.expenseNumber = `XRC-${String(seq).padStart(6, '0')}`;
+    }
+    next();
+  } catch (err) {
+    next(err);
   }
-  next();
 });
 
 module.exports = mongoose.model('Expense', expenseSchema);

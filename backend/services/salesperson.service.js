@@ -52,10 +52,13 @@ class SalespersonService {
       await this.assertUniqueName(data.name, id);
     }
 
+    // Mongoose 8 strips undefined keys from updates by default, so fields the
+    // caller omitted aren't written as null (the old `omitUndefined` option is
+    // gone and was a no-op here).
     const salesperson = await Salesperson.findByIdAndUpdate(
       id,
       { name: data.name, phone: data.phone, note: data.note, isActive: data.isActive },
-      { new: true, runValidators: true, omitUndefined: true }
+      { new: true, runValidators: true }
     );
 
     if (!salesperson) {

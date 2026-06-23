@@ -273,17 +273,27 @@ const Inventory = () => {
       return;
     }
 
-    const exportData = inventory.map((item, index) => ({
-      '#': index + 1,
-      'Məhsul': item.product?.name || '',
-      'SKU': item.product?.sku || '',
-      'Kateqoriya': item.product?.category || '',
-      'Anbar': item.warehouse?.name || '',
-      'Anbar Tipi': item.warehouse?.type === 'main' ? 'Əsas' : 'Filial',
-      'Miqdar': item.quantity,
-      ...(isOwner() && { 'Maya Dəyəri (vahid, AZN)': item.costPrice || 0 }),
-      ...(isOwner() && { 'Toplam Dəyər (AZN)': (item.quantity * (item.costPrice || 0)).toFixed(2) })
-    }));
+    const exportData = inventory.map((item, index) => {
+      // The two list endpoints return different shapes: the all-warehouses list
+      // populates `productId`/`warehouseId` as objects, while the single-warehouse
+      // list returns `product` + a raw `warehouseId` id. Normalize both so no
+      // column comes out blank. (`item.warehouse` never existed — always blank.)
+      const product = item.product || item.productId || {};
+      const wh = (item.warehouseId && typeof item.warehouseId === 'object')
+        ? item.warehouseId
+        : warehouses.find((w) => w._id === item.warehouseId);
+      return {
+        '#': index + 1,
+        'Məhsul': product.name || '',
+        'SKU': product.sku || '',
+        'Kateqoriya': product.category || '',
+        'Anbar': wh?.name || '',
+        'Anbar Tipi': wh?.type === 'main' ? 'Əsas' : 'Filial',
+        'Miqdar': item.quantity,
+        ...(isOwner() && { 'Maya Dəyəri (vahid, AZN)': item.costPrice || 0 }),
+        ...(isOwner() && { 'Toplam Dəyər (AZN)': (item.quantity * (item.costPrice || 0)).toFixed(2) })
+      };
+    });
 
     try {
       const ws = XLSX.utils.json_to_sheet(exportData);
@@ -741,7 +751,7 @@ const Inventory = () => {
                     type="number"
                     className="form-control"
                     value={transferForm.quantity}
-                    onChange={(e) => setTransferForm({ ...transferForm, quantity: parseInt(e.target.value) })}
+                    onChange={(e) => setTransferForm({ ...transferForm, quantity: parseInt(e.target.value) || 0 })}
                     min="1"
                     required
                   />

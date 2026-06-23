@@ -104,16 +104,20 @@ creditorSchema.index({ ownerId: 1, vendorId: 1 });
 creditorSchema.index({ ownerId: 1, dueDate: 1 });
 
 creditorSchema.pre('save', function(next) {
-  this.remainingAmount = this.totalAmount - this.paidAmount;
-  
+  // Round to cents so repeated payments don't accumulate floating-point drift.
+  this.remainingAmount = Math.round((this.totalAmount - this.paidAmount) * 100) / 100;
+
   if (this.remainingAmount <= 0) {
     this.status = DEBT_STATUS.PAID;
   } else if (this.paidAmount > 0) {
     this.status = DEBT_STATUS.PARTIAL;
   } else if (this.dueDate && new Date() > this.dueDate) {
     this.status = DEBT_STATUS.OVERDUE;
+  } else {
+    // Not paid and not (any longer) past due → back to PENDING.
+    this.status = DEBT_STATUS.PENDING;
   }
-  
+
   next();
 });
 

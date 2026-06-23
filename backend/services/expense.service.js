@@ -99,8 +99,16 @@ class ExpenseService {
     };
   }
 
-  async getById(id) {
-    const expense = await Expense.findById(id)
+  async getById(id, ownerId) {
+    // Scope to the requester's own (or shared) expenses. A founder must not be
+    // able to read the other founder's expense by guessing its id; the director
+    // passes ownerId = null and sees everything.
+    const query = { _id: id };
+    if (ownerId) {
+      query.$or = [{ ownerId }, { isShared: true }];
+    }
+
+    const expense = await Expense.findOne(query)
       .populate('branchId', 'name code')
       .populate('createdBy', 'name');
 
@@ -112,20 +120,25 @@ class ExpenseService {
   }
 
   async update(id, updateData, ownerId) {
-    const expense = await Expense.findOne({ _id: id, ownerId });
+    // A founder may only edit their own expenses; the director (ownerId = null)
+    // may edit any. ownerId is never overwritten from the body.
+    const { ownerId: _ignore, ...safeUpdate } = updateData;
+    const query = ownerId ? { _id: id, ownerId } : { _id: id };
+    const expense = await Expense.findOne(query);
 
     if (!expense) {
       throw new Error('Xərc tapılmadı');
     }
 
-    Object.assign(expense, updateData);
+    Object.assign(expense, safeUpdate);
     await expense.save();
 
     return expense;
   }
 
   async delete(id, ownerId) {
-    const expense = await Expense.findOneAndDelete({ _id: id, ownerId });
+    const query = ownerId ? { _id: id, ownerId } : { _id: id };
+    const expense = await Expense.findOneAndDelete(query);
 
     if (!expense) {
       throw new Error('Xərc tapılmadı');
@@ -180,9 +193,11 @@ class ExpenseService {
 
   async getMonthlySummary(ownerId, branchId, year) {
     const matchQuery = {
+      // Half-open range [Jan 1, next Jan 1). `$lte: ${year}-12-31` resolves to
+      // midnight Dec 31, dropping every expense recorded later that day.
       date: {
         $gte: new Date(`${year}-01-01`),
-        $lte: new Date(`${year}-12-31`)
+        $lt: new Date(`${Number(year) + 1}-01-01`)
       }
     };
 

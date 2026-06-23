@@ -76,7 +76,13 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
-    if (error.response?.status === 401) {
+    // A 401 on a real request means the token is missing/expired/revoked → bounce
+    // to login. But a 401 from the login call itself is just "wrong credentials";
+    // let the login form surface that message instead of hard-redirecting to the
+    // page the user is already on (which swallowed the error toast).
+    const url = error.config?.url || '';
+    const isLoginAttempt = url.includes('/auth/login');
+    if (error.response?.status === 401 && !isLoginAttempt) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/login';

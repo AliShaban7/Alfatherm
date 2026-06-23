@@ -116,32 +116,40 @@ class CreditorService {
       throw new Error('Düzgün ödəniş məbləği daxil edin');
     }
 
-    const creditor = await Creditor.findOne({ _id: id, ...ownerFilter });
-    if (!creditor) {
-      throw new Error('Kreditor tapılmadı');
-    }
-
-    if (creditor.status === DEBT_STATUS.PAID) {
-      throw new Error('Bu borc artıq ödənilib');
-    }
-
-    if (amount > creditor.remainingAmount + 1e-6) {
-      throw new Error('Ödəniş məbləği qalıq borcdan çox ola bilməz');
-    }
-
     const session = await mongoose.startSession();
     session.startTransaction();
 
     try {
-      creditor.paymentHistory.push({
-        amount,
-        paymentMethod,
-        date: new Date(),
-        paidBy: userId,
-        note
-      });
+      // Concurrency-safe payment: the `remainingAmount >= amount` guard in the
+      // filter plus the atomic $inc of both balance fields means two simultaneous
+      // payments can't both succeed and overpay the vendor debt.
+      const creditor = await Creditor.findOneAndUpdate(
+        {
+          _id: id,
+          ...ownerFilter,
+          status: { $ne: DEBT_STATUS.PAID },
+          remainingAmount: { $gte: amount - 1e-6 }
+        },
+        {
+          $push: {
+            paymentHistory: { amount, paymentMethod, date: new Date(), paidBy: userId, note }
+          },
+          $inc: { paidAmount: amount, remainingAmount: -amount }
+        },
+        { new: true, session }
+      );
 
-      creditor.paidAmount += amount;
+      if (!creditor) {
+        const existing = await Creditor.findOne({ _id: id, ...ownerFilter })
+          .select('status')
+          .session(session)
+          .lean();
+        if (!existing) throw new Error('Kreditor tapılmadı');
+        if (existing.status === DEBT_STATUS.PAID) throw new Error('Bu borc artıq ödənilib');
+        throw new Error('Ödəniş məbləği qalıq borcdan çox ola bilməz');
+      }
+
+      // Re-derive remainingAmount/status exactly via the pre-save hook.
       await creditor.save({ session });
 
       await Vendor.findByIdAndUpdate(

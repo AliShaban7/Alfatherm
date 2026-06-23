@@ -8,8 +8,9 @@ class AuthService {
     }
 
     const user = await User.create(userData);
-    const token = user.getSignedJwtToken();
 
+    // No token is issued here: register is a director-only provisioning action
+    // (the caller is already the authenticated SUPER_OWNER, not the new user).
     return {
       user: {
         id: user._id,
@@ -18,8 +19,7 @@ class AuthService {
         role: user.role,
         ownerId: user.ownerId,
         branchId: user.branchId
-      },
-      token
+      }
     };
   }
 

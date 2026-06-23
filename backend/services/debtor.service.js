@@ -81,32 +81,44 @@ class DebtorService {
       throw new Error('Düzgün ödəniş məbləği daxil edin');
     }
 
-    const debtor = await Debtor.findOne({ _id: id, ...ownerFilter });
-    if (!debtor) {
-      throw new Error('Debitor tapılmadı');
-    }
-
-    if (debtor.status === DEBT_STATUS.PAID) {
-      throw new Error('Bu borc artıq ödənilib');
-    }
-
-    if (amount > debtor.remainingAmount + 1e-6) {
-      throw new Error('Ödəniş məbləği qalıq borcdan çox ola bilməz');
-    }
-
     const session = await mongoose.startSession();
     session.startTransaction();
 
     try {
-      debtor.paymentHistory.push({
-        amount,
-        paymentMethod,
-        date: new Date(),
-        receivedBy: userId,
-        note
-      });
+      // Concurrency-safe payment. The `remainingAmount >= amount` guard lives in
+      // the update filter, and paidAmount/remainingAmount are incremented in the
+      // same atomic op, so two simultaneous payments can never both succeed and
+      // overpay the debt (the loser's filter no longer matches). A read-then-save
+      // would let both pass the check and corrupt the balance.
+      const debtor = await Debtor.findOneAndUpdate(
+        {
+          _id: id,
+          ...ownerFilter,
+          status: { $ne: DEBT_STATUS.PAID },
+          remainingAmount: { $gte: amount - 1e-6 }
+        },
+        {
+          $push: {
+            paymentHistory: { amount, paymentMethod, date: new Date(), receivedBy: userId, note }
+          },
+          $inc: { paidAmount: amount, remainingAmount: -amount }
+        },
+        { new: true, session }
+      );
 
-      debtor.paidAmount += amount;
+      if (!debtor) {
+        // Disambiguate the failure (not found / already paid / amount too large).
+        const existing = await Debtor.findOne({ _id: id, ...ownerFilter })
+          .select('status')
+          .session(session)
+          .lean();
+        if (!existing) throw new Error('Debitor tapılmadı');
+        if (existing.status === DEBT_STATUS.PAID) throw new Error('Bu borc artıq ödənilib');
+        throw new Error('Ödəniş məbləği qalıq borcdan çox ola bilməz');
+      }
+
+      // Re-derive remainingAmount/status exactly (the pre-save hook rounds the
+      // value and flips pending → partial → paid).
       await debtor.save({ session });
 
       await Customer.findByIdAndUpdate(

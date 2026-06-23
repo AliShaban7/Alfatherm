@@ -1,4 +1,9 @@
 const expenseService = require('../services/expense.service');
+const { ROLES } = require('../config/constants');
+
+// Founders (OWNER) are scoped to their own (+ shared) expenses; the director
+// (SUPER_OWNER) is scoped to null → sees and manages every owner's expenses.
+const expenseScope = (req) => (req.user.role === ROLES.OWNER ? req.ownerId : null);
 
 exports.create = async (req, res, next) => {
   try {
@@ -15,7 +20,7 @@ exports.create = async (req, res, next) => {
 
 exports.getAll = async (req, res, next) => {
   try {
-    const result = await expenseService.getAll(req.ownerId, req.query);
+    const result = await expenseService.getAll(expenseScope(req), req.query);
     
     res.status(200).json({
       success: true,
@@ -28,7 +33,7 @@ exports.getAll = async (req, res, next) => {
 
 exports.getById = async (req, res, next) => {
   try {
-    const expense = await expenseService.getById(req.params.id);
+    const expense = await expenseService.getById(req.params.id, expenseScope(req));
     
     res.status(200).json({
       success: true,
@@ -41,7 +46,7 @@ exports.getById = async (req, res, next) => {
 
 exports.update = async (req, res, next) => {
   try {
-    const expense = await expenseService.update(req.params.id, req.body, req.ownerId);
+    const expense = await expenseService.update(req.params.id, req.body, expenseScope(req));
     
     res.status(200).json({
       success: true,
@@ -54,7 +59,7 @@ exports.update = async (req, res, next) => {
 
 exports.delete = async (req, res, next) => {
   try {
-    const result = await expenseService.delete(req.params.id, req.ownerId);
+    const result = await expenseService.delete(req.params.id, expenseScope(req));
     
     res.status(200).json({
       success: true,
@@ -68,7 +73,7 @@ exports.delete = async (req, res, next) => {
 exports.getSummaryByCategory = async (req, res, next) => {
   try {
     const { branchId, startDate, endDate } = req.query;
-    const summary = await expenseService.getSummaryByCategory(req.ownerId, branchId, startDate, endDate);
+    const summary = await expenseService.getSummaryByCategory(expenseScope(req), branchId, startDate, endDate);
     
     res.status(200).json({
       success: true,
@@ -83,7 +88,7 @@ exports.getMonthlySummary = async (req, res, next) => {
   try {
     const { branchId, year } = req.query;
     const currentYear = year || new Date().getFullYear();
-    const summary = await expenseService.getMonthlySummary(req.ownerId, branchId, currentYear);
+    const summary = await expenseService.getMonthlySummary(expenseScope(req), branchId, currentYear);
     
     res.status(200).json({
       success: true,

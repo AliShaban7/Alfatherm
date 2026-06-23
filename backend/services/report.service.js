@@ -189,7 +189,10 @@ class ReportService {
         }
       },
       { $project: { saleIds: 0 } },
-      { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } }
+      // Include week so groupBy:'week' (whose key is {year, week}, no month/day)
+      // sorts chronologically too; absent keys are null and don't affect the
+      // day/month groupings.
+      { $sort: { '_id.year': 1, '_id.month': 1, '_id.week': 1, '_id.day': 1 } }
     ]);
 
     const totals = await Sale.aggregate([

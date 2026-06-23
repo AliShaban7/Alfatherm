@@ -1,5 +1,6 @@
 exports.formatCurrency = (amount, currency = 'AZN') => {
-  return `${amount.toFixed(2)} ${currency}`;
+  // Coerce first: a string/undefined amount would throw on .toFixed.
+  return `${(Number(amount) || 0).toFixed(2)} ${currency}`;
 };
 
 exports.generateCode = (prefix, length = 6) => {

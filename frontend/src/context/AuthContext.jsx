@@ -18,12 +18,45 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const token = localStorage.getItem('token');
     const userData = localStorage.getItem('user');
-    
-    if (token && userData) {
-      setUser(JSON.parse(userData));
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+
+    if (!token || !userData) {
+      setLoading(false);
+      return;
     }
-    setLoading(false);
+
+    api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+
+    // Show the cached user immediately (no flicker), then re-validate the token
+    // against the server. This catches a revoked/expired token and refreshes the
+    // role/ownerId if it changed since login — instead of trusting localStorage,
+    // which a user could tamper with. A 401 is handled by the api interceptor.
+    try {
+      setUser(JSON.parse(userData));
+    } catch {
+      localStorage.removeItem('user');
+    }
+
+    api.get('/auth/profile')
+      .then((res) => {
+        const fresh = res.data?.data;
+        if (fresh) {
+          const normalized = {
+            id: fresh._id,
+            name: fresh.name,
+            email: fresh.email,
+            role: fresh.role,
+            ownerId: fresh.ownerId,
+            branchId: fresh.branchId?._id || fresh.branchId || null
+          };
+          localStorage.setItem('user', JSON.stringify(normalized));
+          setUser(normalized);
+        }
+      })
+      .catch(() => {
+        // Invalid/expired token: the response interceptor clears storage and
+        // redirects to /login, so nothing extra is needed here.
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   const login = async (email, password) => {

@@ -53,10 +53,12 @@ class UstaService {
       await this.assertUniqueName(data.name, id);
     }
 
+    // Mongoose 8 strips undefined keys from updates by default, so omitted fields
+    // aren't written as null (the old `omitUndefined` option is gone / a no-op).
     const usta = await Usta.findByIdAndUpdate(
       id,
       { name: data.name, phone: data.phone, note: data.note, isActive: data.isActive },
-      { new: true, runValidators: true, omitUndefined: true }
+      { new: true, runValidators: true }
     );
 
     if (!usta) {

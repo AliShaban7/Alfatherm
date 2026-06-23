@@ -80,14 +80,16 @@ userSchema.methods.matchPassword = async function(enteredPassword) {
 
 userSchema.methods.getSignedJwtToken = function() {
   return jwt.sign(
-    { 
+    {
       id: this._id,
       ownerId: this.ownerId,
       role: this.role,
       branchId: this.branchId
     },
     process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRE }
+    // Fall back to a finite lifetime: an unset JWT_EXPIRE would otherwise sign
+    // tokens that never expire.
+    { expiresIn: process.env.JWT_EXPIRE || '7d' }
   );
 };
 

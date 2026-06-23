@@ -1,5 +1,17 @@
 import { formatPaymentLabel } from './payment';
 
+// Escape user-controlled strings before interpolating them into the receipt
+// HTML. A product/customer name containing "<" or "&" would otherwise corrupt
+// the receipt layout (and is a self-XSS into the print window).
+const esc = (v) =>
+  String(v ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[c]));
+
 /**
  * Build 80mm thermal receipt HTML for a sale.
  */
@@ -36,7 +48,7 @@ export const buildReceiptHtml = (sale, options = {}) => {
 
       return `
         <tr>
-          <td class="col-name">${name}</td>
+          <td class="col-name">${esc(name)}</td>
           <td class="col-qty">${qty}</td>
           <td class="col-price">${unitPrice.toFixed(2)}</td>
           <td class="col-total">${(lineTotal || 0).toFixed(2)}</td>
@@ -52,7 +64,7 @@ export const buildReceiptHtml = (sale, options = {}) => {
     <html>
     <head>
       <meta charset="UTF-8">
-      <title>Qəbz #${sale.saleNumber}</title>
+      <title>Qəbz #${esc(sale.saleNumber)}</title>
       <style>
         @media print {
           @page { size: 80mm auto; margin: 0; }
@@ -123,15 +135,15 @@ export const buildReceiptHtml = (sale, options = {}) => {
     <body>
       <div class="header">
         <h2>ALFATERM</h2>
-        <div>Qəbz #${sale.saleNumber}</div>
+        <div>Qəbz #${esc(sale.saleNumber)}</div>
       </div>
       <div class="info">
-        <div>Tarix: ${formatDate(sale.date)}</div>
-        <div>Kassir: ${cashierName}</div>
-        ${salespersonName ? `<div>Satıcı: ${salespersonName}</div>` : ''}
-        <div>Müştəri: ${customerName}</div>
-        <div>Ödəniş: ${paymentLine}</div>
-        ${warehouseName ? `<div>Anbar: ${warehouseName}</div>` : branchName ? `<div>Filial: ${branchName}</div>` : ''}
+        <div>Tarix: ${esc(formatDate(sale.date))}</div>
+        <div>Kassir: ${esc(cashierName)}</div>
+        ${salespersonName ? `<div>Satıcı: ${esc(salespersonName)}</div>` : ''}
+        <div>Müştəri: ${esc(customerName)}</div>
+        <div>Ödəniş: ${esc(paymentLine)}</div>
+        ${warehouseName ? `<div>Anbar: ${esc(warehouseName)}</div>` : branchName ? `<div>Filial: ${esc(branchName)}</div>` : ''}
       </div>
       <table class="items-table">
         <thead>
@@ -174,7 +186,7 @@ export const buildReceiptHtml = (sale, options = {}) => {
         </div>
         <div class="summary-row">
           <span>Qalıq:</span>
-          <span>${(sale.totalAmount - (sale.paidAmount || 0)).toFixed(2)} AZN</span>
+          <span>${((sale.totalAmount || 0) - (sale.paidAmount || 0)).toFixed(2)} AZN</span>
         </div>
         `
             : ''

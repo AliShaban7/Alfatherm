@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FiPlus, FiTrash2, FiSearch } from 'react-icons/fi';
 import CustomerFormModal from '../components/customers/CustomerFormModal';
@@ -15,10 +15,33 @@ import {
 } from '../utils/payment';
 import './NewSale.css';
 
+// az-AZ keypads emit a comma decimal ("12,50"). parseFloat('12,50') === 12 would
+// silently drop the kuruş, so every money value is read through num(), which
+// normalises comma → dot and never returns NaN (blank/garbage → 0).
+const num = (v) => {
+  if (v === '' || v === null || v === undefined) return 0;
+  const n = parseFloat(String(v).replace(',', '.'));
+  return Number.isFinite(n) ? n : 0;
+};
+
+// Keep only digits and a single decimal point (normalising comma → dot) while
+// preserving partial mid-typing input like "12." so controlled inputs work.
+const normalizeDecimal = (v) => {
+  const cleaned = String(v).replace(',', '.').replace(/[^0-9.]/g, '');
+  const firstDot = cleaned.indexOf('.');
+  if (firstDot === -1) return cleaned;
+  // Drop any extra dots after the first.
+  return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
+};
+
 const NewSale = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
+  // Synchronous re-entry guard: `loading` only blocks the button on the next
+  // render, so a fast double-click could fire submitSale twice and create two
+  // sales. This ref flips immediately.
+  const submittingRef = useRef(false);
   const [products, setProducts] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
@@ -126,8 +149,11 @@ const NewSale = () => {
     const existingIndex = formData.items.findIndex(item => item.productId === product._id);
     
     if (existingIndex >= 0) {
-      const newItems = [...formData.items];
-      newItems[existingIndex].quantity += 1;
+      // Replace the item object instead of mutating it in place: `[...items]` is a
+      // shallow copy, so the element is still the same reference held in state.
+      const newItems = formData.items.map((item, i) =>
+        i === existingIndex ? { ...item, quantity: item.quantity + 1 } : item
+      );
       setFormData({ ...formData, items: newItems });
     } else {
       setFormData({
@@ -156,9 +182,12 @@ const NewSale = () => {
     const item = newItems[index];
     
     if (field === 'unitPrice') {
-      newItems[index] = { ...item, unitPrice: value === '' ? '' : parseFloat(value) || 0 };
+      // Store the raw normalised string so partial decimals ("12.") survive and
+      // commas become dots; num() reads it wherever a number is needed.
+      newItems[index] = { ...item, unitPrice: value === '' ? '' : normalizeDecimal(value) };
     } else if (field === 'quantity') {
-      newItems[index] = { ...item, quantity: value === '' ? '' : parseInt(value) || 0 };
+      const digits = String(value).replace(/[^0-9]/g, '');
+      newItems[index] = { ...item, quantity: digits === '' ? '' : parseInt(digits, 10) || 0 };
     } else {
       newItems[index] = { ...item, [field]: value };
     }
@@ -167,14 +196,14 @@ const NewSale = () => {
   };
   
   const isPriceBelowMin = (item) => {
-    return item.unitPrice !== '' && item.unitPrice < item.minPrice;
+    return item.unitPrice !== '' && num(item.unitPrice) < item.minPrice;
   };
 
   const calculateItemDiscount = (item) => {
-    const qty = item.quantity === '' ? 0 : item.quantity;
-    const price = item.unitPrice === '' ? 0 : item.unitPrice;
-    const recommendedPrice = item.recommendedPrice || 0;
-    
+    const qty = num(item.quantity);
+    const price = num(item.unitPrice);
+    const recommendedPrice = num(item.recommendedPrice);
+
     if (price < recommendedPrice) {
       return (recommendedPrice - price) * qty;
     }
@@ -189,16 +218,13 @@ const NewSale = () => {
 
   const calculateSubtotal = () => {
     return formData.items.reduce((sum, item) => {
-      const qty = item.quantity === '' ? 0 : item.quantity;
-      const price = item.unitPrice === '' ? 0 : item.unitPrice;
-      return sum + (qty * price);
+      return sum + (num(item.quantity) * num(item.unitPrice));
     }, 0);
   };
 
   // Whole-sale discount (clamped to the subtotal); Toplam = subtotal − discount.
   const getDiscount = () => {
-    const d = formData.discount === '' ? 0 : parseFloat(formData.discount) || 0;
-    return Math.min(Math.max(d, 0), calculateSubtotal());
+    return Math.min(Math.max(num(formData.discount), 0), calculateSubtotal());
   };
 
   const calculateTotal = () => calculateSubtotal() - getDiscount();
@@ -215,11 +241,8 @@ const NewSale = () => {
     setSaleExpenses((rows) => rows.filter((_, i) => i !== index));
 
   const calculateCostsTotal = () => {
-    const commissionAmt = commission.amount === '' ? 0 : parseFloat(commission.amount) || 0;
-    const expensesAmt = saleExpenses.reduce(
-      (sum, e) => sum + (e.amount === '' ? 0 : parseFloat(e.amount) || 0),
-      0
-    );
+    const commissionAmt = num(commission.amount);
+    const expensesAmt = saleExpenses.reduce((sum, e) => sum + num(e.amount), 0);
     return commissionAmt + expensesAmt;
   };
 
@@ -252,7 +275,7 @@ const NewSale = () => {
     }
 
     for (const item of formData.items) {
-      if (item.unitPrice === '' || item.unitPrice < item.minPrice) {
+      if (item.unitPrice === '' || num(item.unitPrice) < item.minPrice) {
         toast.error(`"${item.productName}" üçün qiymət minimum ${item.minPrice} AZN-dən az ola bilməz`);
         return;
       }
@@ -282,7 +305,7 @@ const NewSale = () => {
     }
 
     // Commission: amount and usta go together.
-    const commissionAmount = commission.amount === '' ? 0 : parseFloat(commission.amount) || 0;
+    const commissionAmount = num(commission.amount);
     if (commissionAmount > 0 && !commission.ustaId) {
       toast.error('Komissiya üçün usta seçin');
       return;
@@ -294,13 +317,16 @@ const NewSale = () => {
 
     // Each expense row must be complete (category + amount > 0) before submitting.
     for (const e of saleExpenses) {
-      const amt = e.amount === '' ? 0 : parseFloat(e.amount) || 0;
-      if (!e.category || amt <= 0) {
+      if (!e.category || num(e.amount) <= 0) {
         toast.error('Hər xərc sətri üçün kateqoriya və məbləğ (>0) daxil edin');
         return;
       }
     }
 
+    // Block re-entry from a rapid double-click before `loading` re-renders the
+    // disabled button — otherwise the same sale is created twice.
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
 
     const { paymentType, paymentMethod } = toApiPayment(
@@ -317,7 +343,7 @@ const NewSale = () => {
       items: formData.items.map((item) => ({
         productId: item.productId,
         quantity: Number(item.quantity),
-        unitPrice: Number(item.unitPrice)
+        unitPrice: num(item.unitPrice)
       }))
     };
 
@@ -336,7 +362,7 @@ const NewSale = () => {
     if (saleExpenses.length > 0) {
       payload.saleExpenses = saleExpenses.map((e) => ({
         category: e.category,
-        amount: parseFloat(e.amount) || 0
+        amount: num(e.amount)
       }));
     }
 
@@ -345,7 +371,7 @@ const NewSale = () => {
     }
 
     if (paymentType === 'credit' && formData.paidAmount !== '') {
-      payload.paidAmount = parseFloat(formData.paidAmount) || 0;
+      payload.paidAmount = num(formData.paidAmount);
     }
 
     // Only the API call governs success/failure. Receipt printing and navigation
@@ -357,12 +383,14 @@ const NewSale = () => {
     } catch (error) {
       toast.error(error.response?.data?.message || 'Satış yaratmaq mümkün olmadı');
       setLoading(false);
+      submittingRef.current = false;
       return;
     }
 
     toast.success('Satış uğurla yaradıldı');
     setShowConfirm(false);
     setLoading(false);
+    submittingRef.current = false;
 
     const sale = response.data?.data;
     if (!sale) {
@@ -582,11 +610,11 @@ const NewSale = () => {
                         </td>
                         <td>
                           <input
-                            type="number"
+                            type="text"
+                            inputMode="decimal"
                             className="form-control"
                             value={item.unitPrice}
                             onChange={(e) => handleItemChange(index, 'unitPrice', e.target.value)}
-                            step="0.01"
                             placeholder={item.recommendedPrice}
                             style={{ 
                               width: '120px',
@@ -600,7 +628,7 @@ const NewSale = () => {
                           )}
                         </td>
                         <td style={{ fontWeight: 600 }}>
-                          {formatCurrency((item.quantity || 0) * (item.unitPrice || 0))}
+                          {formatCurrency(num(item.quantity) * num(item.unitPrice))}
                         </td>
                         <td>
                           <button
@@ -700,12 +728,11 @@ const NewSale = () => {
                   <div className="form-group span-2">
                     <label className="form-label">İlkin Ödəniş</label>
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       className="form-control"
                       value={formData.paidAmount}
-                      onChange={(e) => setFormData({ ...formData, paidAmount: e.target.value === '' ? '' : parseFloat(e.target.value) || 0 })}
-                      step="0.01"
-                      min="0"
+                      onChange={(e) => setFormData({ ...formData, paidAmount: e.target.value === '' ? '' : normalizeDecimal(e.target.value) })}
                     />
                   </div>
                 )}
@@ -738,14 +765,12 @@ const NewSale = () => {
                 <div className="new-sale-totals-row" style={{ alignItems: 'center' }}>
                   <span>Endirim (AZN)</span>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     className="form-control"
                     style={{ width: '130px', textAlign: 'right' }}
                     value={formData.discount}
-                    onChange={(e) => setFormData({ ...formData, discount: e.target.value })}
-                    step="0.01"
-                    min="0"
-                    max={calculateSubtotal()}
+                    onChange={(e) => setFormData({ ...formData, discount: normalizeDecimal(e.target.value) })}
                     placeholder="0"
                   />
                 </div>
@@ -753,10 +778,12 @@ const NewSale = () => {
                   <span>Toplam</span>
                   <span>{formatCurrency(calculateTotal())}</span>
                 </div>
-                {formData.paymentSelection === PAYMENT_SELECTION.CREDIT && formData.paidAmount > 0 && (
+                {formData.paymentSelection === PAYMENT_SELECTION.CREDIT && num(formData.paidAmount) > 0 && (
                   <div className="new-sale-totals-row debt">
                     <span>Qalıq borc</span>
-                    <span>{formatCurrency(calculateTotal() - formData.paidAmount)}</span>
+                    {/* Clamp at 0 so an over-payment never previews a negative debt
+                        (the backend also clamps the stored paidAmount to the total). */}
+                    <span>{formatCurrency(Math.max(0, calculateTotal() - num(formData.paidAmount)))}</span>
                   </div>
                 )}
               </div>
@@ -846,14 +873,13 @@ const NewSale = () => {
                   ))}
                 </select>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   className="form-control"
                   style={{ flex: 1 }}
                   placeholder="Məbləğ"
-                  step="0.01"
-                  min="0"
                   value={commission.amount}
-                  onChange={(e) => setCommission({ ...commission, amount: e.target.value })}
+                  onChange={(e) => setCommission({ ...commission, amount: normalizeDecimal(e.target.value) })}
                 />
               </div>
             </div>
@@ -873,14 +899,13 @@ const NewSale = () => {
                     ))}
                   </select>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     className="form-control"
                     style={{ flex: 1 }}
                     placeholder="Məbləğ"
-                    step="0.01"
-                    min="0"
                     value={row.amount}
-                    onChange={(e) => updateExpenseRow(index, 'amount', e.target.value)}
+                    onChange={(e) => updateExpenseRow(index, 'amount', normalizeDecimal(e.target.value))}
                   />
                   <button
                     type="button"

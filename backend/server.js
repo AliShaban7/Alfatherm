@@ -1,4 +1,12 @@
 require('dotenv').config();
+
+// Fail fast if the JWT secret is missing — otherwise jwt.sign throws only at the
+// first login (and jwt.verify accepts nothing), which is much harder to diagnose
+// than a clear startup error.
+if (!process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET təyin olunmayıb. .env faylını yoxlayın.');
+}
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
