@@ -1,8 +1,10 @@
 const { body, param } = require('express-validator');
 
 exports.productEntryValidation = [
+  // Optional: paid (cash) local-store buys have no formal vendor. The service
+  // still requires one for credit (borc) entries.
   body('vendorId')
-    .notEmpty().withMessage('Vendor seçin')
+    .optional({ checkFalsy: true })
     .isMongoId().withMessage('Düzgün vendor ID daxil edin'),
   
   body('productId')

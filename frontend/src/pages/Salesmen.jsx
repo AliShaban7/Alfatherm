@@ -17,7 +17,7 @@ const Salesmen = () => {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [formData, setFormData] = useState({ name: '', phone: '', note: '' });
+  const [formData, setFormData] = useState({ name: '', phone: '', note: '', bonusRate: '' });
   const [range, setRange] = useState({ startDate: monthStartStr(), endDate: todayStr() });
 
   const formatCurrency = (amount) =>
@@ -69,7 +69,7 @@ const Salesmen = () => {
 
   const handleEdit = (sp) => {
     setEditing(sp);
-    setFormData({ name: sp.name, phone: sp.phone || '', note: sp.note || '' });
+    setFormData({ name: sp.name, phone: sp.phone || '', note: sp.note || '', bonusRate: sp.bonusRate ?? '' });
     setShowModal(true);
   };
 
@@ -91,7 +91,7 @@ const Salesmen = () => {
 
   const resetForm = () => {
     setEditing(null);
-    setFormData({ name: '', phone: '', note: '' });
+    setFormData({ name: '', phone: '', note: '', bonusRate: '' });
   };
 
   return (
@@ -145,6 +145,10 @@ const Salesmen = () => {
                   <th>Satış sayı</th>
                   <th>Toplam satış</th>
                   <th>Mənfəət</th>
+                  <th>Bonus %</th>
+                  <th>Qalıq borc</th>
+                  <th>Qazanılmış bonus</th>
+                  <th>Gözləyən bonus</th>
                   <th>Status</th>
                   {isOwner() && <th></th>}
                 </tr>
@@ -159,6 +163,10 @@ const Salesmen = () => {
                       <td>{s?.salesCount || 0}</td>
                       <td>{formatCurrency(s?.totalAmount)}</td>
                       <td>{formatCurrency(s?.totalProfit)}</td>
+                      <td>{sp.bonusRate ? `${sp.bonusRate}%` : '—'}</td>
+                      <td style={{ color: s?.outstanding ? 'var(--danger)' : 'inherit' }}>{formatCurrency(s?.outstanding)}</td>
+                      <td style={{ fontWeight: 600, color: 'var(--success, #16a34a)' }}>{formatCurrency(s?.bonusEarned)}</td>
+                      <td style={{ color: 'var(--warning, #f59e0b)' }}>{formatCurrency(s?.bonusPending)}</td>
                       <td>{sp.isActive ? 'Aktiv' : 'Deaktiv'}</td>
                       {isOwner() && (
                         <td>
@@ -213,6 +221,19 @@ const Salesmen = () => {
                     className="form-control"
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Bonus dərəcəsi (% mənfəətdən)</label>
+                  <input
+                    type="number"
+                    className="form-control"
+                    value={formData.bonusRate}
+                    onChange={(e) => setFormData({ ...formData, bonusRate: e.target.value })}
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    placeholder="0"
                   />
                 </div>
                 <div className="form-group">

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FiPlus, FiTrash2, FiSearch } from 'react-icons/fi';
 import CustomerFormModal from '../components/customers/CustomerFormModal';
@@ -15,33 +15,10 @@ import {
 } from '../utils/payment';
 import './NewSale.css';
 
-// az-AZ keypads emit a comma decimal ("12,50"). parseFloat('12,50') === 12 would
-// silently drop the kuruş, so every money value is read through num(), which
-// normalises comma → dot and never returns NaN (blank/garbage → 0).
-const num = (v) => {
-  if (v === '' || v === null || v === undefined) return 0;
-  const n = parseFloat(String(v).replace(',', '.'));
-  return Number.isFinite(n) ? n : 0;
-};
-
-// Keep only digits and a single decimal point (normalising comma → dot) while
-// preserving partial mid-typing input like "12." so controlled inputs work.
-const normalizeDecimal = (v) => {
-  const cleaned = String(v).replace(',', '.').replace(/[^0-9.]/g, '');
-  const firstDot = cleaned.indexOf('.');
-  if (firstDot === -1) return cleaned;
-  // Drop any extra dots after the first.
-  return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
-};
-
 const NewSale = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isOwner } = useAuth();
   const [loading, setLoading] = useState(false);
-  // Synchronous re-entry guard: `loading` only blocks the button on the next
-  // render, so a fast double-click could fire submitSale twice and create two
-  // sales. This ref flips immediately.
-  const submittingRef = useRef(false);
   const [products, setProducts] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
@@ -130,7 +107,9 @@ const NewSale = () => {
         warehouseAPI.getAll(),
         salespersonAPI.getAll(),
         ustaAPI.getAll(),
-        vendorAPI.getAll({ limit: 1000 })
+        // Vendors are owner-only (employees get 403); only used for the manufacturer
+        // label, so salespeople skip it to avoid breaking the whole load.
+        isOwner() ? vendorAPI.getAll({ limit: 1000 }) : Promise.resolve({ data: { vendors: [] } })
       ]);
       setProducts(productsRes.data.products);
       setCustomers(customersRes.data.customers);
@@ -138,7 +117,7 @@ const NewSale = () => {
       setSalespersons(salespersonsRes.data.data || []);
       setUstas(ustasRes.data.data || []);
       setVendorMap(
-        (vendorsRes.data.vendors || []).reduce((acc, v) => { acc[v._id] = v.name; return acc; }, {})
+        (vendorsRes.data.vendors || []).reduce((acc, v) => { acc[v._id] = v.companyName || v.name; return acc; }, {})
       );
     } catch (error) {
       toast.error('Məlumatları yükləmək mümkün olmadı');
@@ -149,11 +128,8 @@ const NewSale = () => {
     const existingIndex = formData.items.findIndex(item => item.productId === product._id);
     
     if (existingIndex >= 0) {
-      // Replace the item object instead of mutating it in place: `[...items]` is a
-      // shallow copy, so the element is still the same reference held in state.
-      const newItems = formData.items.map((item, i) =>
-        i === existingIndex ? { ...item, quantity: item.quantity + 1 } : item
-      );
+      const newItems = [...formData.items];
+      newItems[existingIndex].quantity += 1;
       setFormData({ ...formData, items: newItems });
     } else {
       setFormData({
@@ -182,12 +158,9 @@ const NewSale = () => {
     const item = newItems[index];
     
     if (field === 'unitPrice') {
-      // Store the raw normalised string so partial decimals ("12.") survive and
-      // commas become dots; num() reads it wherever a number is needed.
-      newItems[index] = { ...item, unitPrice: value === '' ? '' : normalizeDecimal(value) };
+      newItems[index] = { ...item, unitPrice: value === '' ? '' : parseFloat(value) || 0 };
     } else if (field === 'quantity') {
-      const digits = String(value).replace(/[^0-9]/g, '');
-      newItems[index] = { ...item, quantity: digits === '' ? '' : parseInt(digits, 10) || 0 };
+      newItems[index] = { ...item, quantity: value === '' ? '' : parseInt(value) || 0 };
     } else {
       newItems[index] = { ...item, [field]: value };
     }
@@ -196,35 +169,21 @@ const NewSale = () => {
   };
   
   const isPriceBelowMin = (item) => {
-    return item.unitPrice !== '' && num(item.unitPrice) < item.minPrice;
-  };
-
-  const calculateItemDiscount = (item) => {
-    const qty = num(item.quantity);
-    const price = num(item.unitPrice);
-    const recommendedPrice = num(item.recommendedPrice);
-
-    if (price < recommendedPrice) {
-      return (recommendedPrice - price) * qty;
-    }
-    return 0;
-  };
-
-  const calculateTotalDiscount = () => {
-    return formData.items.reduce((sum, item) => {
-      return sum + calculateItemDiscount(item);
-    }, 0);
+    return item.unitPrice !== '' && item.unitPrice < item.minPrice;
   };
 
   const calculateSubtotal = () => {
     return formData.items.reduce((sum, item) => {
-      return sum + (num(item.quantity) * num(item.unitPrice));
+      const qty = item.quantity === '' ? 0 : item.quantity;
+      const price = item.unitPrice === '' ? 0 : item.unitPrice;
+      return sum + (qty * price);
     }, 0);
   };
 
   // Whole-sale discount (clamped to the subtotal); Toplam = subtotal − discount.
   const getDiscount = () => {
-    return Math.min(Math.max(num(formData.discount), 0), calculateSubtotal());
+    const d = formData.discount === '' ? 0 : parseFloat(formData.discount) || 0;
+    return Math.min(Math.max(d, 0), calculateSubtotal());
   };
 
   const calculateTotal = () => calculateSubtotal() - getDiscount();
@@ -241,8 +200,11 @@ const NewSale = () => {
     setSaleExpenses((rows) => rows.filter((_, i) => i !== index));
 
   const calculateCostsTotal = () => {
-    const commissionAmt = num(commission.amount);
-    const expensesAmt = saleExpenses.reduce((sum, e) => sum + num(e.amount), 0);
+    const commissionAmt = commission.amount === '' ? 0 : parseFloat(commission.amount) || 0;
+    const expensesAmt = saleExpenses.reduce(
+      (sum, e) => sum + (e.amount === '' ? 0 : parseFloat(e.amount) || 0),
+      0
+    );
     return commissionAmt + expensesAmt;
   };
 
@@ -275,7 +237,7 @@ const NewSale = () => {
     }
 
     for (const item of formData.items) {
-      if (item.unitPrice === '' || num(item.unitPrice) < item.minPrice) {
+      if (item.unitPrice === '' || item.unitPrice < item.minPrice) {
         toast.error(`"${item.productName}" üçün qiymət minimum ${item.minPrice} AZN-dən az ola bilməz`);
         return;
       }
@@ -283,15 +245,8 @@ const NewSale = () => {
         toast.error(`"${item.productName}" üçün miqdar ən azı 1 olmalıdır`);
         return;
       }
-      const available = stockMap[item.productId];
-      if (available === undefined) {
-        toast.error(`"${item.productName}" bu anbarda mövcud deyil`);
-        return;
-      }
-      if (item.quantity > available) {
-        toast.error(`"${item.productName}" üçün anbarda yalnız ${available} ədəd var`);
-        return;
-      }
+      // Overselling is allowed for store sales (stock may not be transferred yet),
+      // so insufficient stock is shown as a warning, not a hard block.
     }
 
     setShowConfirm(true);
@@ -305,7 +260,7 @@ const NewSale = () => {
     }
 
     // Commission: amount and usta go together.
-    const commissionAmount = num(commission.amount);
+    const commissionAmount = commission.amount === '' ? 0 : parseFloat(commission.amount) || 0;
     if (commissionAmount > 0 && !commission.ustaId) {
       toast.error('Komissiya üçün usta seçin');
       return;
@@ -317,16 +272,13 @@ const NewSale = () => {
 
     // Each expense row must be complete (category + amount > 0) before submitting.
     for (const e of saleExpenses) {
-      if (!e.category || num(e.amount) <= 0) {
+      const amt = e.amount === '' ? 0 : parseFloat(e.amount) || 0;
+      if (!e.category || amt <= 0) {
         toast.error('Hər xərc sətri üçün kateqoriya və məbləğ (>0) daxil edin');
         return;
       }
     }
 
-    // Block re-entry from a rapid double-click before `loading` re-renders the
-    // disabled button — otherwise the same sale is created twice.
-    if (submittingRef.current) return;
-    submittingRef.current = true;
     setLoading(true);
 
     const { paymentType, paymentMethod } = toApiPayment(
@@ -343,7 +295,7 @@ const NewSale = () => {
       items: formData.items.map((item) => ({
         productId: item.productId,
         quantity: Number(item.quantity),
-        unitPrice: num(item.unitPrice)
+        unitPrice: Number(item.unitPrice)
       }))
     };
 
@@ -362,7 +314,8 @@ const NewSale = () => {
     if (saleExpenses.length > 0) {
       payload.saleExpenses = saleExpenses.map((e) => ({
         category: e.category,
-        amount: num(e.amount)
+        amount: parseFloat(e.amount) || 0,
+        ...(e.note?.trim() ? { note: e.note.trim() } : {})
       }));
     }
 
@@ -371,7 +324,7 @@ const NewSale = () => {
     }
 
     if (paymentType === 'credit' && formData.paidAmount !== '') {
-      payload.paidAmount = num(formData.paidAmount);
+      payload.paidAmount = parseFloat(formData.paidAmount) || 0;
     }
 
     // Only the API call governs success/failure. Receipt printing and navigation
@@ -383,14 +336,12 @@ const NewSale = () => {
     } catch (error) {
       toast.error(error.response?.data?.message || 'Satış yaratmaq mümkün olmadı');
       setLoading(false);
-      submittingRef.current = false;
       return;
     }
 
     toast.success('Satış uğurla yaradıldı');
     setShowConfirm(false);
     setLoading(false);
-    submittingRef.current = false;
 
     const sale = response.data?.data;
     if (!sale) {
@@ -599,6 +550,7 @@ const NewSale = () => {
                             className="form-control"
                             value={item.quantity}
                             onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
+                            onFocus={(e) => e.target.select()}
                             min="1"
                             style={{ width: '80px', borderColor: isStockInsufficient(item) ? 'var(--danger)' : '' }}
                           />
@@ -610,11 +562,12 @@ const NewSale = () => {
                         </td>
                         <td>
                           <input
-                            type="text"
-                            inputMode="decimal"
+                            type="number"
                             className="form-control"
                             value={item.unitPrice}
                             onChange={(e) => handleItemChange(index, 'unitPrice', e.target.value)}
+                            onFocus={(e) => e.target.select()}
+                            step="0.01"
                             placeholder={item.recommendedPrice}
                             style={{ 
                               width: '120px',
@@ -628,7 +581,7 @@ const NewSale = () => {
                           )}
                         </td>
                         <td style={{ fontWeight: 600 }}>
-                          {formatCurrency(num(item.quantity) * num(item.unitPrice))}
+                          {formatCurrency((item.quantity || 0) * (item.unitPrice || 0))}
                         </td>
                         <td>
                           <button
@@ -728,11 +681,13 @@ const NewSale = () => {
                   <div className="form-group span-2">
                     <label className="form-label">İlkin Ödəniş</label>
                     <input
-                      type="text"
-                      inputMode="decimal"
+                      type="number"
                       className="form-control"
                       value={formData.paidAmount}
-                      onChange={(e) => setFormData({ ...formData, paidAmount: e.target.value === '' ? '' : normalizeDecimal(e.target.value) })}
+                      onChange={(e) => setFormData({ ...formData, paidAmount: e.target.value === '' ? '' : parseFloat(e.target.value) || 0 })}
+                      onFocus={(e) => e.target.select()}
+                      step="0.01"
+                      min="0"
                     />
                   </div>
                 )}
@@ -752,38 +707,33 @@ const NewSale = () => {
 
             <div className="card new-sale-checkout">
               <div className="new-sale-totals">
-                {calculateTotalDiscount() > 0 && (
-                  <div className="new-sale-totals-row discount">
-                    <span>Endirim</span>
-                    <span>-{formatCurrency(calculateTotalDiscount())}</span>
-                  </div>
-                )}
                 <div className="new-sale-totals-row main" style={{ borderBottom: 'none' }}>
-                  <span>Ara cəm</span>
+                  <span>Cəm</span>
                   <span>{formatCurrency(calculateSubtotal())}</span>
                 </div>
                 <div className="new-sale-totals-row" style={{ alignItems: 'center' }}>
                   <span>Endirim (AZN)</span>
                   <input
-                    type="text"
-                    inputMode="decimal"
+                    type="number"
                     className="form-control"
                     style={{ width: '130px', textAlign: 'right' }}
                     value={formData.discount}
-                    onChange={(e) => setFormData({ ...formData, discount: normalizeDecimal(e.target.value) })}
+                    onChange={(e) => setFormData({ ...formData, discount: e.target.value })}
+                    onFocus={(e) => e.target.select()}
+                    step="0.01"
+                    min="0"
+                    max={calculateSubtotal()}
                     placeholder="0"
                   />
                 </div>
                 <div className="new-sale-totals-row main">
-                  <span>Toplam</span>
+                  <span>YEKUN</span>
                   <span>{formatCurrency(calculateTotal())}</span>
                 </div>
-                {formData.paymentSelection === PAYMENT_SELECTION.CREDIT && num(formData.paidAmount) > 0 && (
+                {formData.paymentSelection === PAYMENT_SELECTION.CREDIT && formData.paidAmount > 0 && (
                   <div className="new-sale-totals-row debt">
                     <span>Qalıq borc</span>
-                    {/* Clamp at 0 so an over-payment never previews a negative debt
-                        (the backend also clamps the stored paidAmount to the total). */}
-                    <span>{formatCurrency(Math.max(0, calculateTotal() - num(formData.paidAmount)))}</span>
+                    <span>{formatCurrency(calculateTotal() - formData.paidAmount)}</span>
                   </div>
                 )}
               </div>
@@ -825,7 +775,7 @@ const NewSale = () => {
                 </div>
               )}
               <div className="new-sale-totals-row main">
-                <span>Toplam</span>
+                <span>YEKUN</span>
                 <span>{formatCurrency(calculateTotal())}</span>
               </div>
               <div className="new-sale-totals-row" style={{ color: 'var(--gray-500)' }}>
@@ -873,13 +823,15 @@ const NewSale = () => {
                   ))}
                 </select>
                 <input
-                  type="text"
-                  inputMode="decimal"
+                  type="number"
                   className="form-control"
                   style={{ flex: 1 }}
                   placeholder="Məbləğ"
+                  step="0.01"
+                  min="0"
                   value={commission.amount}
-                  onChange={(e) => setCommission({ ...commission, amount: normalizeDecimal(e.target.value) })}
+                  onChange={(e) => setCommission({ ...commission, amount: e.target.value })}
+                  onFocus={(e) => e.target.select()}
                 />
               </div>
             </div>
@@ -887,10 +839,10 @@ const NewSale = () => {
             <div className="form-group">
               <label className="form-label">Satış xərcləri</label>
               {saleExpenses.map((row, index) => (
-                <div key={index} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                <div key={index} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
                   <select
                     className="form-control"
-                    style={{ flex: 2 }}
+                    style={{ flex: '2 1 120px' }}
                     value={row.category}
                     onChange={(e) => updateExpenseRow(index, 'category', e.target.value)}
                   >
@@ -898,14 +850,26 @@ const NewSale = () => {
                       <option key={o.value} value={o.value}>{o.label}</option>
                     ))}
                   </select>
+                  {row.category === 'other' && (
+                    <input
+                      type="text"
+                      className="form-control"
+                      style={{ flex: '3 1 160px' }}
+                      placeholder="Xərc adı"
+                      value={row.note || ''}
+                      onChange={(e) => updateExpenseRow(index, 'note', e.target.value)}
+                    />
+                  )}
                   <input
-                    type="text"
-                    inputMode="decimal"
+                    type="number"
                     className="form-control"
-                    style={{ flex: 1 }}
+                    style={{ flex: '1 1 80px' }}
                     placeholder="Məbləğ"
+                    step="0.01"
+                    min="0"
                     value={row.amount}
-                    onChange={(e) => updateExpenseRow(index, 'amount', normalizeDecimal(e.target.value))}
+                    onChange={(e) => updateExpenseRow(index, 'amount', e.target.value)}
+                    onFocus={(e) => e.target.select()}
                   />
                   <button
                     type="button"

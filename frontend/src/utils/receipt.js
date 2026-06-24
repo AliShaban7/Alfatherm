@@ -163,7 +163,7 @@ export const buildReceiptHtml = (sale, options = {}) => {
           saleDiscount > 0
             ? `
         <div class="summary-row">
-          <span>Ara cəm:</span>
+          <span>Cəm:</span>
           <span>${subtotal.toFixed(2)} AZN</span>
         </div>
         <div class="summary-row discount">
@@ -174,7 +174,7 @@ export const buildReceiptHtml = (sale, options = {}) => {
             : ''
         }
         <div class="summary-row total">
-          <span>TOPLAM:</span>
+          <span>YEKUN:</span>
           <span>${(sale.totalAmount || 0).toFixed(2)} AZN</span>
         </div>
         ${

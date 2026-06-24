@@ -405,7 +405,9 @@ const Products = () => {
           >
             <FiDownload /> Excel
           </button>
-          {isOwner() && (
+          {/* Salespeople can add/import products too — scoped to their own
+              (store) owner by the backend. */}
+          {(
             <>
               <button className="btn btn-secondary" onClick={downloadTemplate} title="Excel idxal şablonu">
                 <FiDownload /> Şablon

@@ -92,7 +92,7 @@ export const AuthProvider = ({ children }) => {
     return user?.role === 'EMPLOYEE';
   };
 
-  const getHomePath = () => (user?.role === 'EMPLOYEE' ? '/sales' : '/');
+  const getHomePath = () => (user?.role === 'EMPLOYEE' ? '/my-sales' : '/');
 
   const value = {
     user,

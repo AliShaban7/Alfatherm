@@ -1,15 +1,37 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
+import { authAPI } from '../services/api';
 import './Login.css';
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState([]);
+  const debounceRef = useRef(null);
   const { login } = useAuth();
   const navigate = useNavigate();
+
+  // Fetch matching usernames as the user types so they can pick from a dropdown
+  // instead of writing the whole email each time.
+  const handleEmailChange = (value) => {
+    setEmail(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (value.trim().length < 2) {
+      setSuggestions([]);
+      return;
+    }
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await authAPI.getUsernames(value.trim());
+        setSuggestions(res.data.data || []);
+      } catch {
+        setSuggestions([]);
+      }
+    }, 200);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -23,7 +45,7 @@ const Login = () => {
     try {
       const userData = await login(email, password);
       toast.success('Uğurla daxil oldunuz');
-      navigate(userData.role === 'EMPLOYEE' ? '/sales' : '/');
+      navigate(userData.role === 'EMPLOYEE' ? '/my-sales' : '/');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Giriş uğursuz oldu');
     } finally {
@@ -48,9 +70,16 @@ const Login = () => {
               className="form-control"
               placeholder="email@example.com"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => handleEmailChange(e.target.value)}
+              list="login-usernames"
+              autoComplete="off"
               disabled={loading}
             />
+            <datalist id="login-usernames">
+              {suggestions.map((u) => (
+                <option key={u.email} value={u.email}>{u.name}</option>
+              ))}
+            </datalist>
           </div>
 
           <div className="form-group">

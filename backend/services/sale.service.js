@@ -37,26 +37,15 @@ class SaleService {
 
   // Split `amount` across owners in proportion to each owner's share of the
   // sale subtotal, giving the last owner the rounding remainder so the parts
-  // sum back to `amount` exactly. Returns [{ ownerId, amount }].
-  //
-  // `denominator` MUST equal the sum of `ownerSubtotals` values (i.e. the gross
-  // subtotal) — passing the discounted total here over-weights the early owners
-  // and pushes the last owner's remainder negative, which then violates the
-  // Commission/Expense `min: 0` validators and aborts the whole sale.
-  // A zero denominator (all-free items) falls back to an equal split so we never
-  // divide by zero / write NaN shares.
-  _splitAmountByOwner(amount, ownerSubtotals, denominator) {
+  // sum back to `amount` exactly. Returns [{ ownerId, amount }]. (Same technique
+  // already used for credit-debtor allocation.)
+  _splitAmountByOwner(amount, ownerSubtotals, totalAmount) {
     const ownerIds = [...ownerSubtotals.keys()];
     let allocated = 0;
     return ownerIds.map((ownerId, index) => {
-      let share;
-      if (index === ownerIds.length - 1) {
-        share = Math.round((amount - allocated) * 100) / 100;
-      } else if (denominator > 0) {
-        share = Math.round((amount * ownerSubtotals.get(ownerId) / denominator) * 100) / 100;
-      } else {
-        share = Math.round((amount / ownerIds.length) * 100) / 100;
-      }
+      const share = index === ownerIds.length - 1
+        ? Math.round((amount - allocated) * 100) / 100
+        : Math.round((amount * ownerSubtotals.get(ownerId) / totalAmount) * 100) / 100;
       allocated += share;
       return { ownerId, amount: share };
     });
@@ -176,16 +165,9 @@ class SaleService {
     let subtotal = 0;
     let totalCost = 0;
     let totalDiscount = 0;
-    let totalMinPrice = 0;
 
     const productMap = new Map(products.map((p) => [p._id.toString(), p]));
     const inventoryMap = new Map(inventories.map((inv) => [inv.productId.toString(), inv]));
-
-    // Cumulative stock needed per product. A sale can list the same product on
-    // more than one line; checking each line in isolation against the warehouse
-    // row would let the lines collectively oversell (each passes, the sum
-    // doesn't). Validate the running total instead.
-    const requiredByProduct = new Map();
 
     for (const item of items) {
       const product = productMap.get(String(item.productId));
@@ -201,15 +183,11 @@ class SaleService {
 
       const inventory = inventoryMap.get(String(item.productId));
 
-      const cumulativeNeeded = (requiredByProduct.get(String(item.productId)) || 0) + item.quantity;
-      requiredByProduct.set(String(item.productId), cumulativeNeeded);
-
-      if (!inventory || inventory.quantity < cumulativeNeeded) {
-        throw new Error(`Kifayət qədər stok yoxdur: ${product.name}`);
-      }
-
-      // Profit uses anbar maya dəyəri (mal girişi), not məhsul kartındakı boş maya
-      const unitCost = inventory.costPrice ?? product.costPrice ?? 0;
+      // Overselling is allowed for store sales (stock may not be transferred to the
+      // store yet): no hard block on insufficient stock — it goes negative and
+      // reconciles when stock is entered/transferred. Cost falls back to the
+      // product card when there's no live inventory cost.
+      const unitCost = inventory?.costPrice ?? product.costPrice ?? 0;
       const itemCost = unitCost * item.quantity;
 
       // Never sell below the warehouse cost price (maya dəyəri). This is stricter
@@ -241,7 +219,6 @@ class SaleService {
       subtotal += itemSubtotal;
       totalCost += itemCost;
       totalDiscount += itemDiscount;
-      totalMinPrice += product.minPrice * item.quantity;
     }
 
     // Manual whole-sale discount: clamp to [0, subtotal] and never let it push
@@ -249,12 +226,6 @@ class SaleService {
     const saleDiscount = Math.min(Math.max(Number(discount) || 0, 0), subtotal);
     if (subtotal - saleDiscount < totalCost - 1e-6) {
       throw new Error('Endirim çox böyükdür: satış maya dəyərindən aşağı düşə bilməz');
-    }
-    // The per-item minPrice floor is checked before the discount; a whole-sale
-    // discount must not be used to slip the sale below the sum of minimum prices
-    // either, otherwise the price-protection rule is trivially bypassable.
-    if (subtotal - saleDiscount < totalMinPrice - 1e-6) {
-      throw new Error('Endirim çox böyükdür: satış minimum qiymətlər cəmindən aşağı düşə bilməz');
     }
 
     const totalAmount = Math.round((subtotal - saleDiscount) * 100) / 100;
@@ -324,46 +295,27 @@ class SaleService {
 
       const createdSale = sale[0];
 
-      // Deduct all stock in ONE bulk write. The `quantity >= needed` filter makes
-      // each decrement atomic, so concurrent sales can't oversell (a non-matching
-      // row simply isn't modified). Then record all SALE movements in one insert.
-      // This replaces the previous 3-round-trips-per-item loop.
-      // Collapse duplicate product lines into a single decrement per stock row
-      // (productId + warehouse + owner). Building one op per line would target the
-      // same row twice with each line's quantity in the $gte filter, so the second
-      // op fails against the already-decremented stock and aborts a valid sale.
-      const deductByRow = new Map();
-      for (const item of processedItems) {
-        const key = `${item.productId}_${item.productOwnerId}`;
-        const existing = deductByRow.get(key);
-        if (existing) {
-          existing.quantity += item.quantity;
-        } else {
-          deductByRow.set(key, {
-            productId: item.productId,
-            ownerId: item.productOwnerId,
-            quantity: item.quantity
-          });
-        }
-      }
-
-      const stockOps = [...deductByRow.values()].map((row) => ({
+      // Deduct all stock in ONE bulk write. Overselling is allowed for store
+      // sales: there's no `quantity >= needed` guard, and a missing store stock
+      // row is created (going negative) via upsert. The balance reconciles when
+      // stock is later entered/transferred into the store.
+      const stockOps = processedItems.map((item) => ({
         updateOne: {
           filter: {
-            productId: row.productId,
+            productId: item.productId,
             warehouseId,
-            ownerId: row.ownerId,
-            quantity: { $gte: row.quantity }
+            ownerId: item.productOwnerId
           },
-          update: { $inc: { quantity: -row.quantity }, $set: { lastUpdated: new Date() } }
+          update: {
+            $inc: { quantity: -item.quantity },
+            $set: { lastUpdated: new Date() },
+            $setOnInsert: { costPrice: item.costPrice ?? 0 }
+          },
+          upsert: true
         }
       }));
 
-      const stockResult = await Inventory.bulkWrite(stockOps, { session });
-      if (stockResult.modifiedCount !== deductByRow.size) {
-        // Stock changed between validation and deduction (concurrent sale).
-        throw new Error('Kifayət qədər stok yoxdur');
-      }
+      await Inventory.bulkWrite(stockOps, { session });
 
       await InventoryTransaction.insertMany(
         processedItems.map((item) => ({
@@ -383,7 +335,7 @@ class SaleService {
       // Referral commission: one payable per owner, split by item share. Accrues
       // to the usta's balance and is drawn down later in the Expenses panel.
       if (commissionAmount > 0) {
-        const commissionDocs = this._splitAmountByOwner(commissionAmount, ownerSubtotals, subtotal)
+        const commissionDocs = this._splitAmountByOwner(commissionAmount, ownerSubtotals, totalAmount)
           .filter((s) => s.amount > 0)
           .map((s) => ({
             ustaId: usta._id,
@@ -408,8 +360,8 @@ class SaleService {
       if (normalizedExpenses.length > 0) {
         const expenseDocs = [];
         for (const e of normalizedExpenses) {
-          const label = SALE_EXPENSE_LABELS[e.category] || e.category;
-          for (const s of this._splitAmountByOwner(e.amount, ownerSubtotals, subtotal)) {
+          const label = (e.category === 'other' && e.note?.trim()) ? e.note.trim() : (SALE_EXPENSE_LABELS[e.category] || e.category);
+          for (const s of this._splitAmountByOwner(e.amount, ownerSubtotals, totalAmount)) {
             if (s.amount <= 0) continue;
             expenseDocs.push({
               ownerId: s.ownerId,
@@ -521,7 +473,9 @@ class SaleService {
     if (filters.startDate || filters.endDate) {
       match.date = {};
       if (filters.startDate) {
-        match.date.$gte = new Date(filters.startDate);
+        const start = new Date(filters.startDate);
+        start.setHours(0, 0, 0, 0); // local start-of-day, so "today" begins at 00:00
+        match.date.$gte = start;
       }
       if (filters.endDate) {
         const end = new Date(filters.endDate);
@@ -620,31 +574,26 @@ class SaleService {
   }
 
   async cancel(id, ownerFilter = {}, userId, user = null) {
+    const sale = await Sale.findById(id);
+
+    if (!sale) {
+      throw new Error('Satış tapılmadı');
+    }
+
+    if (user && !this.canAccessSale(sale, user)) {
+      const err = new Error('Bu satışı ləğv etmək üçün icazəniz yoxdur');
+      err.statusCode = 403;
+      throw err;
+    }
+
+    if (sale.status === 'cancelled') {
+      throw new Error('Bu satış artıq ləğv edilib');
+    }
+
     const session = await mongoose.startSession();
     session.startTransaction();
 
     try {
-      // Atomically claim the sale by flipping its status to 'cancelled' only if
-      // it isn't already. Two concurrent cancels (or a double-click) can't both
-      // win this update, so stock / debt / commission reversals run exactly once.
-      // `new: false` returns the pre-cancel snapshot we need for the reversal.
-      const sale = await Sale.findOneAndUpdate(
-        { _id: id, status: { $ne: 'cancelled' } },
-        { $set: { status: 'cancelled' } },
-        { new: false, session }
-      );
-
-      if (!sale) {
-        // Either the sale doesn't exist or another request already cancelled it.
-        const exists = await Sale.exists({ _id: id }).session(session);
-        throw new Error(exists ? 'Bu satış artıq ləğv edilib' : 'Satış tapılmadı');
-      }
-
-      if (user && !this.canAccessSale(sale, user)) {
-        const err = new Error('Bu satışı ləğv etmək üçün icazəniz yoxdur');
-        err.statusCode = 403;
-        throw err; // aborts the transaction → the status flip is rolled back
-      }
       // 1) Return each line's stock to the warehouse it was sold from, attributed
       //    to that line's product owner (mixed-owner sales restore correctly).
       //    Done as one bulk increment + one transaction insert instead of the
@@ -660,15 +609,7 @@ class SaleService {
             warehouseId,
             ownerId: item.productOwnerId || sale.ownerId
           },
-          // Seed costPrice from the sold line ONLY when the row has to be
-          // recreated (it was deleted between sale and cancel). Without this the
-          // upsert leaves costPrice at 0, which later dilutes the weighted-average
-          // cost downward on the next stock entry. Existing rows keep their cost.
-          update: {
-            $inc: { quantity: item.quantity },
-            $set: { lastUpdated: now },
-            $setOnInsert: { costPrice: item.costPrice ?? 0 }
-          },
+          update: { $inc: { quantity: item.quantity }, $set: { lastUpdated: now } },
           upsert: true
         }
       }));
@@ -711,11 +652,10 @@ class SaleService {
         }
       }, { session });
 
-      await session.commitTransaction();
-
-      // The status was already flipped atomically above; reflect it on the
-      // returned (pre-image) document for the response.
       sale.status = 'cancelled';
+      await sale.save({ session });
+
+      await session.commitTransaction();
       return sale;
     } catch (error) {
       await session.abortTransaction();
@@ -804,27 +744,29 @@ class SaleService {
 
     const result = await Sale.aggregate(pipeline);
     const agg = result[0];
+    const summary = agg
+      ? {
+          totalSales: agg.saleIds.length,
+          totalAmount: agg.totalAmount,
+          totalCost: agg.totalCost,
+          totalProfit: agg.totalAmount - agg.totalCost,
+          cashSales: agg.cashSales,
+          posSales: agg.posSales,
+          bankSales: agg.bankSales,
+          creditSales: agg.creditSales
+        }
+      : null;
 
-    const summary = {
-      totalSales: agg ? agg.saleIds.length : 0,
-      totalAmount: agg ? agg.totalAmount : 0,
-      totalCost: agg ? agg.totalCost : 0,
-      totalProfit: agg ? agg.totalAmount - agg.totalCost : 0,
-      cashSales: agg ? agg.cashSales : 0,
-      posSales: agg ? agg.posSales : 0,
-      bankSales: agg ? agg.bankSales : 0,
-      creditSales: agg ? agg.creditSales : 0
+    return summary || {
+      totalSales: 0,
+      totalAmount: 0,
+      totalCost: 0,
+      totalProfit: 0,
+      cashSales: 0,
+      posSales: 0,
+      bankSales: 0,
+      creditSales: 0
     };
-
-    // Maya dəyəri / mənfəət yalnız sahiblərə (founder) və direktora görünür.
-    // Satıcı (EMPLOYEE) bu endpoint-ə çata bilir, ona görə cost/profit silinir.
-    const canSeeCost = user?.role === ROLES.OWNER || user?.role === ROLES.SUPER_OWNER;
-    if (!canSeeCost) {
-      delete summary.totalCost;
-      delete summary.totalProfit;
-    }
-
-    return summary;
   }
 }
 

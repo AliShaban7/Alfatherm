@@ -18,8 +18,8 @@ const OWNER_IMPORT = {
   zaur: OWNER_IDS.ZAUR,
   'ədalət': OWNER_IDS.ADALAT, 'adalət': OWNER_IDS.ADALAT, adalat: OWNER_IDS.ADALAT
 };
-// SKU owner-code derived the same way as Product.generateSKU.
-const skuCode = (ownerId) => (String(ownerId).split('_')[1] || String(ownerId)).slice(0, 3).toUpperCase() || 'GEN';
+// Short single-letter SKU prefix, same as Product.generateSKU (e.g. Z, A, S).
+const skuCode = (ownerId) => Product.skuLetter(ownerId);
 
 // Trim the descriptive free-text fields so " Bosch" and "Bosch" don't become
 // distinct values. (The UI feeds these from a pick-or-add-new list, so the
@@ -212,7 +212,7 @@ class ProductService {
       (byCode[code] = byCode[code] || []).push(d);
     }
     for (const [code, docs] of Object.entries(byCode)) {
-      const prefix = `PRD-${code}`;
+      const prefix = code; // single letter, e.g. Z / A / S
       const counter = await Counter.findByIdAndUpdate(
         `sku:${prefix}`,
         { $inc: { seq: docs.length } },
@@ -245,8 +245,11 @@ class ProductService {
 
   async getAll(ownerId, filters = {}, canSeeCostPrice = false, user = null) {
     const query = { isActive: true };
-    
-    if (user?.role !== ROLES.SUPER_OWNER && user?.role !== ROLES.EMPLOYEE) {
+
+    // ownOnly=true forces the caller's own namespace even for employees/super
+    // owner — used by the salesperson stocking screen, where you can only add
+    // stock to your own (store) products. Otherwise employees/super owner see all.
+    if (filters.ownOnly === 'true' || (user?.role !== ROLES.SUPER_OWNER && user?.role !== ROLES.EMPLOYEE)) {
       query.ownerId = ownerId;
     }
 

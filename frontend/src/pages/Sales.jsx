@@ -8,16 +8,24 @@ import { useAuth } from '../context/AuthContext';
 import { printSaleReceipt } from '../utils/receipt';
 import { formatPaymentLabel } from '../utils/payment';
 
+const todayLocal = () => {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+};
+
 const Sales = () => {
   const location = useLocation();
   const pendingPrepend = useRef(location.state?.newSale);
   const [sales, setSales] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Default to today: after midnight the new day's sales show, yesterday's drop off.
   const [filters, setFilters] = useState({
     search: '',
     paymentType: '',
-    startDate: '',
-    endDate: ''
+    startDate: todayLocal(),
+    endDate: todayLocal()
   });
   const [pagination, setPagination] = useState({ page: 1, pages: 1 });
   const [detailSale, setDetailSale] = useState(null);
@@ -79,6 +87,17 @@ const Sales = () => {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Apply the search/date filters: reset to page 1 (the effect refetches), or
+  // refetch directly if already on page 1. Never pass the click event to
+  // fetchSales — its first arg is a sale to prepend, not an event.
+  const applyFilters = () => {
+    if (pagination.page !== 1) {
+      setPagination((p) => ({ ...p, page: 1 }));
+    } else {
+      fetchSales();
     }
   };
 
@@ -276,7 +295,7 @@ const Sales = () => {
                       <td><strong>{formatCurrency(sale.totalAmount)}</strong></td>
                       {isOwner() && (
                         <td style={{ color: 'var(--success)' }}>
-                          {formatCurrency(sale.profit || 0)}
+                          {formatCurrency(sale.netProfit ?? sale.profit ?? 0)}
                         </td>
                       )}
                       <td onClick={(e) => e.stopPropagation()}>
@@ -382,7 +401,7 @@ const Sales = () => {
                   {detailSale.saleDiscount > 0 && (
                     <>
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
-                        <span>Ara cəm</span><span>{formatCurrency(detailSale.subtotal)}</span>
+                        <span>Cəm</span><span>{formatCurrency(detailSale.subtotal)}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', color: 'var(--danger)' }}>
                         <span>Endirim</span><span>-{formatCurrency(detailSale.saleDiscount)}</span>
@@ -415,7 +434,7 @@ const Sales = () => {
                       )}
                       {(detailSale.saleExpenses || []).map((e, i) => (
                         <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', fontSize: '0.875rem' }}>
-                          <span>{SALE_EXPENSE_LABELS[e.category] || e.category}{e.note ? ` (${e.note})` : ''}</span>
+                          <span>{(e.category === 'other' && e.note) ? e.note : (SALE_EXPENSE_LABELS[e.category] || e.category)}</span>
                           <span>{formatCurrency(e.amount)}</span>
                         </div>
                       ))}

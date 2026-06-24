@@ -25,13 +25,17 @@ class InventoryService {
       throw new Error('Məhsul tapılmadı');
     }
 
-    if (!vendorId) {
-      throw new Error('Vendor seçin');
+    // Vendor is optional for paid (cash) purchases — locally-bought goods have no
+    // formal vendor. Credit (borc) entries still need one to track the debt.
+    let vendor = null;
+    if (vendorId) {
+      vendor = await Vendor.findById(vendorId); // vendors are shared across owners
+      if (!vendor) {
+        throw new Error('Vendor tapılmadı');
+      }
     }
-
-    const vendor = await Vendor.findById(vendorId); // vendors are shared across owners
-    if (!vendor) {
-      throw new Error('Vendor tapılmadı');
+    if (paymentStatus !== 'paid' && !vendor) {
+      throw new Error('Borclu mal girişi üçün vendor seçin');
     }
 
     const session = await mongoose.startSession();
@@ -207,23 +211,129 @@ class InventoryService {
     }
   }
 
+  // Move many products from one warehouse to another in a single transaction
+  // (all-or-nothing). Each product can belong to a different owner; its stock
+  // rows resolve to that owner.
+  async transferBulk(data, ownerId, userId, canAccessMainWarehouse, user = null) {
+    const { fromWarehouseId, toWarehouseId, items } = data;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new Error('Ən azı bir məhsul seçin');
+    }
+    if (String(fromWarehouseId) === String(toWarehouseId)) {
+      throw new Error('Mənbə və hədəf anbar fərqli olmalıdır');
+    }
+
+    const [fromWarehouse, toWarehouse] = await Promise.all([
+      Warehouse.findById(fromWarehouseId),
+      Warehouse.findById(toWarehouseId)
+    ]);
+    if (!fromWarehouse || !toWarehouse) {
+      throw new Error('Anbar tapılmadı');
+    }
+    if ((fromWarehouse.type === WAREHOUSE_TYPES.MAIN || toWarehouse.type === WAREHOUSE_TYPES.MAIN)
+        && !canAccessMainWarehouse) {
+      throw new Error('Əsas anbara giriş icazəniz yoxdur');
+    }
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+      let moved = 0;
+      for (const it of items) {
+        const productId = it.productId;
+        const quantity = Number(it.quantity);
+        if (!productId || !quantity || quantity < 1) {
+          throw new Error('Hər sətir üçün məhsul və miqdar (≥1) seçin');
+        }
+
+        const productScope = user?.role === ROLES.SUPER_OWNER
+          ? { _id: productId }
+          : { _id: productId, ownerId };
+        const product = await Product.findOne(productScope).session(session);
+        if (!product) {
+          throw new Error('Məhsul tapılmadı');
+        }
+        const itemOwnerId = product.ownerId;
+
+        const fromInventory = await Inventory.findOne({
+          productId, warehouseId: fromWarehouseId, ownerId: itemOwnerId
+        }).session(session);
+        if (!fromInventory || fromInventory.quantity < quantity) {
+          throw new Error(`Kifayət qədər stok yoxdur: ${product.name}`);
+        }
+
+        fromInventory.quantity -= quantity;
+        fromInventory.lastUpdated = new Date();
+        await fromInventory.save({ session });
+
+        let toInventory = await Inventory.findOne({
+          productId, warehouseId: toWarehouseId, ownerId: itemOwnerId
+        }).session(session);
+        const transferCostPrice = fromInventory.costPrice || 0;
+        if (toInventory) {
+          const oldTotal = toInventory.quantity * (toInventory.costPrice || 0);
+          const newTotal = quantity * transferCostPrice;
+          const newQuantity = toInventory.quantity + quantity;
+          toInventory.costPrice = newQuantity > 0 ? (oldTotal + newTotal) / newQuantity : transferCostPrice;
+          toInventory.quantity = newQuantity;
+          toInventory.lastUpdated = new Date();
+          await toInventory.save({ session });
+        } else {
+          const created = await Inventory.create([{
+            productId, warehouseId: toWarehouseId, ownerId: itemOwnerId,
+            quantity, costPrice: transferCostPrice
+          }], { session });
+          toInventory = created[0];
+        }
+
+        await InventoryTransaction.create([{
+          type: INVENTORY_TRANSACTION_TYPES.TRANSFER,
+          productId, ownerId: itemOwnerId, fromWarehouseId, toWarehouseId, quantity,
+          createdBy: userId
+        }], { session });
+
+        moved += 1;
+      }
+
+      await session.commitTransaction();
+      return { count: moved };
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
+    }
+  }
+
   async deductForSale(productId, warehouseId, quantity, salePrice, saleId, ownerId, userId, session) {
-    const inventory = await Inventory.findOne({ 
-      productId, 
-      warehouseId, 
-      ownerId 
+    let inventory = await Inventory.findOne({
+      productId,
+      warehouseId,
+      ownerId
     }).session(session);
 
-    if (!inventory || inventory.quantity < quantity) {
-      const product = await Product.findById(productId);
-      throw new Error(`Kifayət qədər stok yoxdur: ${product?.name || productId}`);
+    // Overselling is allowed for store sales: if there's no stock row yet, or not
+    // enough, the quantity goes negative and reconciles when stock is later
+    // transferred/entered into the store.
+    if (!inventory) {
+      const product = await Product.findById(productId).session(session);
+      const created = await Inventory.create([{
+        productId,
+        warehouseId,
+        ownerId,
+        quantity: -quantity,
+        costPrice: product?.costPrice || 0,
+        lastUpdated: new Date()
+      }], { session });
+      inventory = created[0];
+    } else {
+      inventory.quantity -= quantity;
+      inventory.lastUpdated = new Date();
+      await inventory.save({ session });
     }
 
     const costPriceForSale = inventory.costPrice || 0;
-
-    inventory.quantity -= quantity;
-    inventory.lastUpdated = new Date();
-    await inventory.save({ session });
 
     await InventoryTransaction.create([{
       type: INVENTORY_TRANSACTION_TYPES.SALE,
@@ -279,12 +389,12 @@ class InventoryService {
       throw new Error('Anbar tapılmadı');
     }
 
-    let selectProductFields = 'name sku category brand unit recommendedPrice minPrice';
+    let selectProductFields = 'name sku category brand vendorId unit recommendedPrice minPrice';
     if (canSeeCostPrice) {
       selectProductFields += ' costPrice';
     }
 
-    const query = { warehouseId, quantity: { $gt: 0 } };
+    const query = { warehouseId, quantity: { $ne: 0 } };
     if (user?.role !== ROLES.SUPER_OWNER && user?.role !== ROLES.EMPLOYEE) {
       query.ownerId = ownerId;
     }
@@ -314,12 +424,12 @@ class InventoryService {
   }
 
   async getAll(ownerId, canSeeCostPrice = false, user = null) {
-    let selectProductFields = 'name sku category brand';
+    let selectProductFields = 'name sku category brand vendorId';
     if (canSeeCostPrice) {
       selectProductFields += ' costPrice';
     }
 
-    const query = { quantity: { $gt: 0 } };
+    const query = { quantity: { $ne: 0 } };
     if (user?.role !== ROLES.SUPER_OWNER && user?.role !== ROLES.EMPLOYEE) {
       query.ownerId = ownerId;
     }
@@ -426,7 +536,8 @@ class InventoryService {
         fromWarehouseId: quantityDiff < 0 ? inventory.warehouseId : undefined,
         quantity: Math.abs(quantityDiff),
         costPrice: inventory.costPrice,
-        note: 'Manuel düzəliş',
+        note: (data.note && data.note.trim())
+          || (quantityDiff > 0 ? 'Manual artım' : 'Manual azalma'),
         createdBy: userId
       });
     }
@@ -462,6 +573,81 @@ class InventoryService {
     await Inventory.findByIdAndDelete(inventoryId);
 
     return { success: true };
+  }
+
+  // Bulk stock load from Excel. Each row: { sku, name, warehouse, quantity,
+  // costPrice }. Resolves product (by SKU, then name) and warehouse (by name),
+  // then SETS the stock quantity (and cost, if given) for that product in that
+  // warehouse. One bulk upsert + one transaction insert. Returns a summary.
+  async importStock(rows, user) {
+    if (!Array.isArray(rows) || rows.length === 0) {
+      throw new Error('İdxal üçün məlumat yoxdur');
+    }
+    if (rows.length > 10000) {
+      throw new Error('Bir dəfəyə maksimum 10000 sətir idxal edilə bilər');
+    }
+    const norm = (s) => String(s || '').trim().toLowerCase();
+    const isSuper = user.role === ROLES.SUPER_OWNER;
+
+    const [products, warehouses] = await Promise.all([
+      Product.find({ isActive: true }, 'sku name ownerId').lean(),
+      Warehouse.find({ isActive: true }, 'name').lean()
+    ]);
+    const bySku = new Map(products.map((p) => [String(p.sku).toUpperCase(), p]));
+    const byName = new Map(products.map((p) => [norm(p.name), p]));
+    const whByName = new Map(warehouses.map((w) => [norm(w.name), w._id]));
+
+    const ops = [];
+    const txns = [];
+    const errors = [];
+
+    rows.forEach((r, i) => {
+      const rowNum = i + 2;
+      const fail = (error) => errors.push({ row: rowNum, name: r.sku || r.name || '', error });
+
+      let product = r.sku ? bySku.get(String(r.sku).trim().toUpperCase()) : null;
+      if (!product && r.name) product = byName.get(norm(r.name));
+      if (!product) return fail('Məhsul tapılmadı (SKU və ya ad)');
+      if (!isSuper && product.ownerId !== user.ownerId) return fail('Bu məhsul sizə aid deyil');
+
+      const warehouseId = whByName.get(norm(r.warehouse));
+      if (!warehouseId) return fail(`Anbar tapılmadı: "${r.warehouse || ''}"`);
+
+      const quantity = Number(r.quantity);
+      if (!Number.isFinite(quantity) || quantity < 0) return fail('Miqdar yanlışdır');
+
+      const hasCost = r.costPrice !== '' && r.costPrice != null;
+      const costPrice = Number(r.costPrice);
+      if (hasCost && (!Number.isFinite(costPrice) || costPrice < 0)) return fail('Maya dəyəri yanlışdır');
+
+      const set = { quantity, lastUpdated: new Date() };
+      if (hasCost) set.costPrice = costPrice;
+
+      ops.push({
+        updateOne: {
+          filter: { productId: product._id, warehouseId, ownerId: product.ownerId },
+          update: { $set: set },
+          upsert: true
+        }
+      });
+      txns.push({
+        type: INVENTORY_TRANSACTION_TYPES.IN,
+        productId: product._id,
+        ownerId: product.ownerId,
+        toWarehouseId: warehouseId,
+        quantity,
+        costPrice: hasCost ? costPrice : undefined,
+        note: 'Excel ilə stok yükləndi',
+        createdBy: user._id
+      });
+    });
+
+    if (ops.length) {
+      await Inventory.bulkWrite(ops, { ordered: false });
+      await InventoryTransaction.insertMany(txns, { ordered: false });
+    }
+
+    return { applied: ops.length, failed: errors.length, errors: errors.slice(0, 300) };
   }
 }
 

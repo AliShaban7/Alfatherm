@@ -212,6 +212,8 @@ const Reports = () => {
         { 'Hesab': 'Gəlir', 'Məbləğ (AZN)': profitLossReport.revenue },
         { 'Hesab': 'Maya Dəyəri', 'Məbləğ (AZN)': profitLossReport.costOfGoods },
         { 'Hesab': 'Brüt Mənfəət', 'Məbləğ (AZN)': profitLossReport.grossProfit },
+        { 'Hesab': '  Realizə olunmuş (yığılmış)', 'Məbləğ (AZN)': profitLossReport.realizedProfit },
+        { 'Hesab': '  Debitorlarda (realizə olunmamış)', 'Məbləğ (AZN)': profitLossReport.unrealizedProfit },
         ...(profitLossReport.expenses?.byCategory || []).map((c) => ({ 'Hesab': expenseCategoryLabel(c._id), 'Məbləğ (AZN)': c.amount })),
         { 'Hesab': 'Toplam Xərclər', 'Məbləğ (AZN)': profitLossReport.expenses?.total },
         { 'Hesab': 'Xalis Mənfəət', 'Məbləğ (AZN)': profitLossReport.netProfit }
@@ -456,6 +458,14 @@ const Reports = () => {
                 <tr style={{ background: 'rgba(34,197,94,0.08)' }}>
                   <td><strong style={{ color: '#16a34a' }}>Brüt Mənfəət</strong></td>
                   <td className="num"><strong style={{ color: '#16a34a' }}>{formatCurrency(p.grossProfit)}</strong></td>
+                </tr>
+                <tr>
+                  <td style={{ paddingLeft: '1.5rem', color: 'var(--gray-500)' }} title="Yığılmış (nağd reallaşmış) mənfəət">Realizə olunmuş (yığılmış)</td>
+                  <td className="num" style={{ color: '#16a34a' }}>{formatCurrency(p.realizedProfit)}</td>
+                </tr>
+                <tr>
+                  <td style={{ paddingLeft: '1.5rem', color: 'var(--gray-500)' }} title="Debitorlarda qalan, hələ yığılmamış mənfəət">Debitorlarda (realizə olunmamış)</td>
+                  <td className="num" style={{ color: 'var(--warning, #d97706)' }}>{formatCurrency(p.unrealizedProfit)}</td>
                 </tr>
                 {(p.expenses?.byCategory || []).map((c) => (
                   <tr key={c._id}>

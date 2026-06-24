@@ -6,6 +6,7 @@ const Creditor = require('../models/Creditor');
 const Expense = require('../models/Expense');
 const Product = require('../models/Product');
 const Commission = require('../models/Commission');
+const Salesperson = require('../models/Salesperson');
 const { ROLES } = require('../config/constants');
 
 // A founder (OWNER) sees only the goods they own, even inside a sale that mixes
@@ -165,6 +166,32 @@ class ReportService {
     const cost = this._costExpr(user);
     const pre = [
       { $match: this._salesMatch(user, extra) },
+      // For credit sales bring in the LIVE outstanding from the debtor (the Sale's
+      // own remainingAmount isn't updated when debt is collected later), so the
+      // Nisyə column shows actual debt — not the gross credit sale.
+      { $lookup: { from: Debtor.collection.name, localField: '_id', foreignField: 'saleId', as: '_debtors' } },
+      {
+        $addFields: {
+          _remaining: {
+            $cond: [
+              { $eq: ['$paymentType', 'credit'] },
+              {
+                $cond: [
+                  { $gt: [{ $size: '$_debtors' }, 0] },
+                  { $sum: '$_debtors.remainingAmount' },
+                  { $ifNull: ['$remainingAmount', 0] }
+                ]
+              },
+              0
+            ]
+          }
+        }
+      },
+      {
+        $addFields: {
+          _unpaidFrac: { $cond: [{ $gt: ['$totalAmount', 0] }, { $divide: ['$_remaining', '$totalAmount'] }, 0] }
+        }
+      },
       ...this._ownerItemStages(user)
     ];
 
@@ -179,7 +206,7 @@ class ReportService {
           cashSales: { $sum: { $cond: [{ $eq: ['$paymentMethod', 'cash'] }, amount, 0] } },
           posSales: { $sum: { $cond: [{ $eq: ['$paymentMethod', 'pos'] }, amount, 0] } },
           bankSales: { $sum: { $cond: [{ $eq: ['$paymentMethod', 'bank'] }, amount, 0] } },
-          creditSales: { $sum: { $cond: [{ $eq: ['$paymentType', 'credit'] }, amount, 0] } }
+          creditSales: { $sum: { $multiply: [amount, '$_unpaidFrac'] } }
         }
       },
       {
@@ -389,9 +416,39 @@ class ReportService {
 
     const amount = this._amountExpr(user);
     const cost = this._costExpr(user);
+    const profit = { $subtract: [amount, cost] };
 
     const report = await Sale.aggregate([
       { $match: { ...this._salesMatch(user, extra), salespersonId: { $ne: null } } },
+      // How much of each sale has actually been collected: prepaid sales are fully
+      // collected; credit sales accrue through Debtor payments (the Sale's own
+      // paidAmount is not updated on collection, so read it from the debtor).
+      {
+        $lookup: {
+          from: Debtor.collection.name,
+          localField: '_id',
+          foreignField: 'saleId',
+          as: '_debtors'
+        }
+      },
+      { $addFields: { _paid: { $sum: '$_debtors.paidAmount' } } },
+      {
+        $addFields: {
+          collectedFraction: {
+            $cond: [
+              { $eq: ['$paymentType', 'prepaid'] },
+              1,
+              {
+                $cond: [
+                  { $gt: ['$totalAmount', 0] },
+                  { $min: [1, { $divide: ['$_paid', '$totalAmount'] }] },
+                  0
+                ]
+              }
+            ]
+          }
+        }
+      },
       ...this._ownerItemStages(user),
       {
         $group: {
@@ -399,16 +456,44 @@ class ReportService {
           salespersonName: { $first: '$salespersonName' },
           saleIds: { $addToSet: '$_id' },
           totalAmount: { $sum: amount },
-          totalCost: { $sum: cost }
+          totalCost: { $sum: cost },
+          collectedAmount: { $sum: { $multiply: [amount, '$collectedFraction'] } },
+          recognizedProfit: { $sum: { $multiply: [profit, '$collectedFraction'] } }
         }
       },
       {
         $addFields: {
           salesCount: { $size: '$saleIds' },
-          totalProfit: { $subtract: ['$totalAmount', '$totalCost'] }
+          totalProfit: { $subtract: ['$totalAmount', '$totalCost'] },
+          // Uncollected revenue on this salesperson's sales (their debtors).
+          outstanding: { $subtract: ['$totalAmount', '$collectedAmount'] }
         }
       },
-      { $project: { saleIds: 0 } },
+      // Attach each salesperson's bonus rate.
+      {
+        $lookup: {
+          from: Salesperson.collection.name,
+          localField: '_id',
+          foreignField: '_id',
+          as: '_sp'
+        }
+      },
+      { $addFields: { bonusRate: { $ifNull: [{ $first: '$_sp.bonusRate' }, 0] } } },
+      {
+        $addFields: {
+          // Bonus = rate × profit, recognized only on the collected portion.
+          bonusEarned: {
+            $round: [{ $multiply: ['$recognizedProfit', { $divide: ['$bonusRate', 100] }] }, 2]
+          },
+          bonusPending: {
+            $round: [
+              { $multiply: [{ $subtract: ['$totalProfit', '$recognizedProfit'] }, { $divide: ['$bonusRate', 100] }] },
+              2
+            ]
+          }
+        }
+      },
+      { $project: { saleIds: 0, _sp: 0 } },
       { $sort: { totalAmount: -1 } }
     ]);
 
@@ -461,12 +546,45 @@ class ReportService {
     const [salesData, expenseData, commissionData] = await Promise.all([
       Sale.aggregate([
         { $match: this._salesMatch(user, salesExtra) },
+        // Collected fraction per sale (prepaid = fully collected; credit = via the
+        // debtor's live remaining), so we can split gross profit into the part
+        // realized in cash vs the part still locked in debtors.
+        { $lookup: { from: Debtor.collection.name, localField: '_id', foreignField: 'saleId', as: '_debtors' } },
+        {
+          $addFields: {
+            _remaining: {
+              $cond: [
+                { $eq: ['$paymentType', 'credit'] },
+                {
+                  $cond: [
+                    { $gt: [{ $size: '$_debtors' }, 0] },
+                    { $sum: '$_debtors.remainingAmount' },
+                    { $ifNull: ['$remainingAmount', 0] }
+                  ]
+                },
+                0
+              ]
+            }
+          }
+        },
+        {
+          $addFields: {
+            _collFrac: {
+              $cond: [
+                { $gt: ['$totalAmount', 0] },
+                { $divide: [{ $subtract: ['$totalAmount', '$_remaining'] }, '$totalAmount'] },
+                1
+              ]
+            }
+          }
+        },
         ...this._ownerItemStages(user),
         {
           $group: {
             _id: null,
             totalRevenue: { $sum: amount },
-            totalCost: { $sum: cost }
+            totalCost: { $sum: cost },
+            realizedProfit: { $sum: { $multiply: [{ $subtract: [amount, cost] }, '$_collFrac'] } }
           }
         }
       ]),
@@ -480,8 +598,12 @@ class ReportService {
       ])
     ]);
 
-    const salesAgg = salesData[0] || { totalRevenue: 0, totalCost: 0 };
+    const salesAgg = salesData[0] || { totalRevenue: 0, totalCost: 0, realizedProfit: 0 };
     const grossProfit = salesAgg.totalRevenue - salesAgg.totalCost;
+    // Split: realized = collected portion of gross profit; unrealized = the margin
+    // still sitting in open debtors (recognized on accrual, not yet in cash).
+    const realizedProfit = Math.round((salesAgg.realizedProfit || 0) * 100) / 100;
+    const unrealizedProfit = Math.round((grossProfit - realizedProfit) * 100) / 100;
 
     // Merge accrued commission into the expense breakdown as its own line.
     const commissionAccrued = commissionData[0]?.amount || 0;
@@ -496,6 +618,8 @@ class ReportService {
       revenue: salesAgg.totalRevenue,
       costOfGoods: salesAgg.totalCost,
       grossProfit,
+      realizedProfit,    // collected (cash-realized) gross profit
+      unrealizedProfit,  // gross profit still owed by debtors
       expenses: {
         byCategory: expenseData,
         total: totalExpenses

@@ -13,7 +13,7 @@ export const HomeRedirect = () => {
     );
   }
 
-  return isEmployee() ? <Navigate to="/sales" replace /> : <Dashboard />;
+  return isEmployee() ? <Navigate to="/my-sales" replace /> : <Dashboard />;
 };
 
 export const OwnerRoute = ({ children }) => {
@@ -28,7 +28,25 @@ export const OwnerRoute = ({ children }) => {
   }
 
   if (isEmployee()) {
-    return <Navigate to="/sales" replace />;
+    return <Navigate to="/my-sales" replace />;
+  }
+
+  return children;
+};
+
+export const SuperOwnerRoute = ({ children }) => {
+  const { isSuperOwner, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="loading" style={{ height: '40vh' }}>
+        <div className="spinner" />
+      </div>
+    );
+  }
+
+  if (!isSuperOwner()) {
+    return <Navigate to="/" replace />;
   }
 
   return children;

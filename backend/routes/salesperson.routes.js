@@ -5,8 +5,14 @@ const { protect, ownerOnly } = require('../middleware/auth');
 
 router.use(protect);
 
-// Everyone (incl. employees on the New Sale screen) can read the list...
+// Self-service / tag stats (before /:id so the literal paths match first).
+router.get('/me/summary', salespersonController.getMySummary);
+router.get('/me/customers', salespersonController.getMyCustomers);
+router.get('/stats', salespersonController.getTagStats);
+
+// Everyone (incl. employees) can read the list and a tag's debtors...
 router.get('/', salespersonController.getAll);
+router.get('/:id/debtors', salespersonController.getTagDebtors);
 router.get('/:id', salespersonController.getById);
 
 // ...but only owners / the super owner manage it.

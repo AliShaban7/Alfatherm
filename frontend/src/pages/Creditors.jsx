@@ -123,7 +123,7 @@ const Creditors = () => {
 
     const exportData = creditors.map((creditor, index) => ({
       '#': index + 1,
-      'Vendor': creditor.vendor?.name || '',
+      'Vendor': creditor.vendorId?.companyName || creditor.vendorId?.name || '',
       'Təsvir': creditor.description || '',
       'Tarix': format(new Date(creditor.createdAt), 'dd.MM.yyyy'),
       'Toplam Məbləğ (AZN)': creditor.totalAmount,
@@ -299,10 +299,10 @@ const Creditors = () => {
                 {creditors.map(creditor => (
                   <tr key={creditor._id}>
                     <td>
-                      <strong>{creditor.vendorId?.name}</strong>
-                      {creditor.vendorId?.companyName && (
+                      <strong>{creditor.vendorId?.companyName || creditor.vendorId?.name}</strong>
+                      {creditor.vendorId?.companyName && creditor.vendorId?.name && (
                         <div style={{ fontSize: '0.8125rem', color: 'var(--gray-500)' }}>
-                          {creditor.vendorId.companyName}
+                          {creditor.vendorId.name}
                         </div>
                       )}
                     </td>
@@ -425,7 +425,7 @@ const Creditors = () => {
             <form onSubmit={handlePayment}>
               <div className="modal-body">
                 <div style={{ background: 'var(--gray-50)', padding: '1rem', borderRadius: 'var(--border-radius)', marginBottom: '1rem' }}>
-                  <p><strong>Vendor:</strong> {selectedCreditor.vendorId?.name}</p>
+                  <p><strong>Vendor:</strong> {selectedCreditor.vendorId?.companyName || selectedCreditor.vendorId?.name}</p>
                   <p><strong>Qalıq Borc:</strong> <span style={{ color: 'var(--danger)' }}>{formatCurrency(selectedCreditor.remainingAmount)}</span></p>
                 </div>
                 <div className="form-group">

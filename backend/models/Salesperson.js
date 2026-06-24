@@ -17,6 +17,14 @@ const salespersonSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  // Bonus rate as a percentage of profit (e.g. 3 = 3%). The bonus is earned only
+  // on the collected portion of each sale this salesperson made.
+  bonusRate: {
+    type: Number,
+    default: 0,
+    min: [0, 'Bonus dərəcəsi mənfi ola bilməz'],
+    max: [100, 'Bonus dərəcəsi 100-dən çox ola bilməz']
+  },
   note: {
     type: String,
     trim: true
