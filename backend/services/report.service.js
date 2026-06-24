@@ -43,9 +43,26 @@ class ReportService {
     ];
   }
 
+  // A single line item's revenue, NET of the whole-sale discount (Endirim).
+  // subtotal = Σ items.total and totalAmount = subtotal − saleDiscount, so scaling
+  // each line by totalAmount/subtotal spreads the manual discount across the sale's
+  // owners in proportion to their line value. Requires an unwound `$items`.
+  _netLineAmountExpr() {
+    return {
+      $cond: [
+        { $gt: ['$subtotal', 0] },
+        { $multiply: ['$items.total', { $divide: ['$totalAmount', '$subtotal'] }] },
+        '$items.total'
+      ]
+    };
+  }
+
   // Revenue/cost expressions: per-item when slicing by owner, per-sale otherwise.
+  // For an owner the per-item revenue is taken net of their proportional share of
+  // the whole-sale discount, so a founder's reported revenue/profit reflects the
+  // Endirim instead of their full gross line total.
   _amountExpr(user) {
-    return isOwnerScoped(user) ? '$items.total' : '$totalAmount';
+    return isOwnerScoped(user) ? this._netLineAmountExpr() : '$totalAmount';
   }
 
   _costExpr(user) {
@@ -269,11 +286,13 @@ class ReportService {
           _id: '$items.productId',
           productName: { $first: '$items.productName' },
           totalQuantity: { $sum: '$items.quantity' },
-          totalAmount: { $sum: '$items.total' },
+          // Net of the whole-sale discount, so per-product revenue/profit matches
+          // the discounted sale totals (consistent with the sales & P&L reports).
+          totalAmount: { $sum: this._netLineAmountExpr() },
           totalCost: { $sum: { $multiply: ['$items.costPrice', '$items.quantity'] } },
           totalProfit: {
             $sum: {
-              $subtract: ['$items.total', { $multiply: ['$items.costPrice', '$items.quantity'] }]
+              $subtract: [this._netLineAmountExpr(), { $multiply: ['$items.costPrice', '$items.quantity'] }]
             }
           }
         }

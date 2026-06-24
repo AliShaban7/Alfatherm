@@ -708,7 +708,19 @@ class SaleService {
     }
 
     // Per-sale vs per-item value depending on whether we're slicing by owner.
-    const amount = isOwnerScoped ? '$items.total' : '$totalAmount';
+    // The owner's per-item revenue is taken net of their proportional share of the
+    // whole-sale discount (Endirim): subtotal = Σ items.total and totalAmount =
+    // subtotal − saleDiscount, so items.total × totalAmount/subtotal spreads the
+    // discount across owners by line value.
+    const amount = isOwnerScoped
+      ? {
+          $cond: [
+            { $gt: ['$subtotal', 0] },
+            { $multiply: ['$items.total', { $divide: ['$totalAmount', '$subtotal'] }] },
+            '$items.total'
+          ]
+        }
+      : '$totalAmount';
     const cost = isOwnerScoped
       ? { $multiply: ['$items.costPrice', '$items.quantity'] }
       : '$totalCost';
