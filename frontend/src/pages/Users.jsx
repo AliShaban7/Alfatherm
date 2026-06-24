@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { FiPlus, FiEdit2, FiKey, FiUserX, FiUserCheck } from 'react-icons/fi';
-import { userAPI, branchAPI } from '../services/api';
+import { userAPI, branchAPI, warehouseAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
 
@@ -31,6 +31,7 @@ const Users = () => {
   const { user: me } = useAuth();
   const [users, setUsers] = useState([]);
   const [branches, setBranches] = useState([]);  // Branch[]
+  const [warehouses, setWarehouses] = useState([]);  // Warehouse[] (for store list)
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);         // user being edited
@@ -41,12 +42,14 @@ const Users = () => {
 
   const fetchData = useCallback(async () => {
     try {
-      const [uRes, bRes] = await Promise.all([
+      const [uRes, bRes, wRes] = await Promise.all([
         userAPI.getAll(),
-        branchAPI.getAll()
+        branchAPI.getAll(),
+        warehouseAPI.getAll()
       ]);
       setUsers(uRes.data.data || []);
       setBranches(bRes.data.data || []);
+      setWarehouses(wRes.data.data || []);
     } catch {
       toast.error('İstifadəçiləri yükləmək mümkün olmadı');
     } finally {
@@ -55,6 +58,12 @@ const Users = () => {
   }, []);
 
   const branchNameMap = branches.reduce((acc, b) => { acc[b._id] = b.name; return acc; }, {});
+
+  // Salespeople are assigned to STORES only — list each store's branch (the value
+  // saved on the user is the store's branchId).
+  const storeOptions = warehouses
+    .filter((w) => w.isStore && w.branchId)
+    .map((w) => ({ branchId: typeof w.branchId === 'object' ? w.branchId._id : w.branchId, name: w.name, code: w.code }));
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -263,7 +272,7 @@ const Users = () => {
                 <div className="form-group">
                   <label className="form-label">Rol *</label>
                   <select className="form-control" value={form.role}
-                    onChange={(e) => setForm({ ...form, role: e.target.value })}>
+                    onChange={(e) => setForm({ ...form, role: e.target.value, branchId: e.target.value === 'EMPLOYEE' ? form.branchId : '' })}>
                     {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
                   </select>
                 </div>
@@ -274,16 +283,23 @@ const Users = () => {
                     {OWNERS.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
                   </select>
                 </div>
-                <div className="form-group" style={{ gridColumn: '1/-1' }}>
-                  <label className="form-label">Filial (Satıcı üçün məcburi)</label>
-                  <select className="form-control" value={form.branchId}
-                    onChange={(e) => setForm({ ...form, branchId: e.target.value })}>
-                    <option value="">— Seçin —</option>
-                    {branches.map((b) => (
-                      <option key={b._id} value={b._id}>{b.name} ({b.code})</option>
-                    ))}
-                  </select>
-                </div>
+                {form.role === 'EMPLOYEE' && (
+                  <div className="form-group" style={{ gridColumn: '1/-1' }}>
+                    <label className="form-label">Mağaza *</label>
+                    <select className="form-control" required value={form.branchId}
+                      onChange={(e) => setForm({ ...form, branchId: e.target.value })}>
+                      <option value="">— Seçin —</option>
+                      {storeOptions.map((s) => (
+                        <option key={s.branchId} value={s.branchId}>{s.name}{s.code ? ` (${s.code})` : ''}</option>
+                      ))}
+                    </select>
+                    {storeOptions.length === 0 && (
+                      <div style={{ fontSize: '0.72rem', color: 'var(--warning, #d97706)', marginTop: 4 }}>
+                        Mağaza yoxdur — əvvəlcə Anbarlar səhifəsində "Mağaza" tipli yer yaradın.
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Ləğv et</button>

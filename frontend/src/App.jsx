@@ -23,6 +23,8 @@ const Salesmen = lazy(() => import('./pages/Salesmen'));
 const Ustalar = lazy(() => import('./pages/Ustalar'));
 const Fakturalar = lazy(() => import('./pages/Fakturalar'));
 const Users = lazy(() => import('./pages/Users'));
+const MySales = lazy(() => import('./pages/MySales'));
+const Stocking = lazy(() => import('./pages/Stocking'));
 
 const PageLoader = () => (
   <div className="loading" style={{ height: '60vh' }}>
@@ -56,6 +58,8 @@ function App() {
               <Suspense fallback={<PageLoader />}>
                 <Routes>
                   <Route path="/" element={<HomeRedirect />} />
+                  <Route path="/my-sales" element={<MySales />} />
+                  <Route path="/stock" element={<Stocking />} />
                   <Route path="/sales" element={<Sales />} />
                   <Route path="/sales/new" element={<NewSale />} />
                   <Route path="/products" element={<Products />} />

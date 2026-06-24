@@ -53,6 +53,21 @@ exports.transfer = async (req, res, next) => {
   }
 };
 
+exports.transferBulk = async (req, res, next) => {
+  try {
+    const result = await inventoryService.transferBulk(
+      req.body,
+      req.ownerId,
+      req.user._id,
+      req.canAccessMainWarehouse,
+      req.user
+    );
+    res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+};
+
 exports.getByWarehouse = async (req, res, next) => {
   try {
     const result = await inventoryService.getByWarehouse(

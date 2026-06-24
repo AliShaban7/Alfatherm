@@ -86,7 +86,7 @@ class PurchaseInvoiceService {
         vendorInvoiceNumber,
         ownerId,
         vendorId,
-        vendorName: vendor.name,
+        vendorName: vendor.companyName || vendor.name,
         warehouseId,
         warehouseName: warehouse.name,
         items: lineItems,

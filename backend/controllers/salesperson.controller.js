@@ -9,6 +9,44 @@ exports.create = async (req, res, next) => {
   }
 };
 
+// Self-service: the logged-in salesperson's own performance and customers.
+exports.getMySummary = async (req, res, next) => {
+  try {
+    const data = await salespersonService.getMyStats(req.user, req.query);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getMyCustomers = async (req, res, next) => {
+  try {
+    const data = await salespersonService.getMyCustomers(req.user);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Per salesperson-tag stats + per-tag debtors (visible to salesperson accounts).
+exports.getTagStats = async (req, res, next) => {
+  try {
+    const data = await salespersonService.getTagStats(req.query);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getTagDebtors = async (req, res, next) => {
+  try {
+    const data = await salespersonService.getTagDebtors(req.params.id, req.query);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+};
+
 exports.getAll = async (req, res, next) => {
   try {
     const salespersons = await salespersonService.getAll(req.query);

@@ -129,10 +129,22 @@ productSchema.methods.toEmployeeJSON = function() {
 //      mapped to the same code, the shared sequence still yields unique numbers
 //      with no race between concurrent creates.
 // The loop additionally skips any number already taken by a manually-typed SKU.
-productSchema.statics.generateSKU = async function(ownerId) {
+// Short, single-letter SKU prefix per owner, e.g. Z-0001 (Zaur), A-0001 (Ədalət),
+// S-0001 (store / admin). Unknown owners fall back to their first letter.
+const OWNER_SKU_LETTER = {
+  owner_zaur_001: 'Z',
+  owner_adalat_002: 'A',
+  owner_admin_000: 'S'
+};
+
+productSchema.statics.skuLetter = function(ownerId) {
+  if (OWNER_SKU_LETTER[ownerId]) return OWNER_SKU_LETTER[ownerId];
   const segment = String(ownerId).split('_')[1] || String(ownerId);
-  const ownerCode = segment.slice(0, 3).toUpperCase() || 'GEN';
-  const prefix = `PRD-${ownerCode}`;
+  return (segment[0] || 'P').toUpperCase();
+};
+
+productSchema.statics.generateSKU = async function(ownerId) {
+  const prefix = this.skuLetter(ownerId);
 
   let sku;
   do {

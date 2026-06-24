@@ -183,12 +183,11 @@ class SaleService {
 
       const inventory = inventoryMap.get(String(item.productId));
 
-      if (!inventory || inventory.quantity < item.quantity) {
-        throw new Error(`Kifayət qədər stok yoxdur: ${product.name}`);
-      }
-
-      // Profit uses anbar maya dəyəri (mal girişi), not məhsul kartındakı boş maya
-      const unitCost = inventory.costPrice ?? product.costPrice ?? 0;
+      // Overselling is allowed for store sales (stock may not be transferred to the
+      // store yet): no hard block on insufficient stock — it goes negative and
+      // reconciles when stock is entered/transferred. Cost falls back to the
+      // product card when there's no live inventory cost.
+      const unitCost = inventory?.costPrice ?? product.costPrice ?? 0;
       const itemCost = unitCost * item.quantity;
 
       // Never sell below the warehouse cost price (maya dəyəri). This is stricter
@@ -296,27 +295,27 @@ class SaleService {
 
       const createdSale = sale[0];
 
-      // Deduct all stock in ONE bulk write. The `quantity >= needed` filter makes
-      // each decrement atomic, so concurrent sales can't oversell (a non-matching
-      // row simply isn't modified). Then record all SALE movements in one insert.
-      // This replaces the previous 3-round-trips-per-item loop.
+      // Deduct all stock in ONE bulk write. Overselling is allowed for store
+      // sales: there's no `quantity >= needed` guard, and a missing store stock
+      // row is created (going negative) via upsert. The balance reconciles when
+      // stock is later entered/transferred into the store.
       const stockOps = processedItems.map((item) => ({
         updateOne: {
           filter: {
             productId: item.productId,
             warehouseId,
-            ownerId: item.productOwnerId,
-            quantity: { $gte: item.quantity }
+            ownerId: item.productOwnerId
           },
-          update: { $inc: { quantity: -item.quantity }, $set: { lastUpdated: new Date() } }
+          update: {
+            $inc: { quantity: -item.quantity },
+            $set: { lastUpdated: new Date() },
+            $setOnInsert: { costPrice: item.costPrice ?? 0 }
+          },
+          upsert: true
         }
       }));
 
-      const stockResult = await Inventory.bulkWrite(stockOps, { session });
-      if (stockResult.modifiedCount !== processedItems.length) {
-        // Stock changed between validation and deduction (concurrent sale).
-        throw new Error('Kifayət qədər stok yoxdur');
-      }
+      await Inventory.bulkWrite(stockOps, { session });
 
       await InventoryTransaction.insertMany(
         processedItems.map((item) => ({
@@ -474,7 +473,9 @@ class SaleService {
     if (filters.startDate || filters.endDate) {
       match.date = {};
       if (filters.startDate) {
-        match.date.$gte = new Date(filters.startDate);
+        const start = new Date(filters.startDate);
+        start.setHours(0, 0, 0, 0); // local start-of-day, so "today" begins at 00:00
+        match.date.$gte = start;
       }
       if (filters.endDate) {
         const end = new Date(filters.endDate);

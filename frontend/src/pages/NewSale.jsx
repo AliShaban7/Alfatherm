@@ -17,7 +17,7 @@ import './NewSale.css';
 
 const NewSale = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isOwner } = useAuth();
   const [loading, setLoading] = useState(false);
   const [products, setProducts] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -107,7 +107,9 @@ const NewSale = () => {
         warehouseAPI.getAll(),
         salespersonAPI.getAll(),
         ustaAPI.getAll(),
-        vendorAPI.getAll({ limit: 1000 })
+        // Vendors are owner-only (employees get 403); only used for the manufacturer
+        // label, so salespeople skip it to avoid breaking the whole load.
+        isOwner() ? vendorAPI.getAll({ limit: 1000 }) : Promise.resolve({ data: { vendors: [] } })
       ]);
       setProducts(productsRes.data.products);
       setCustomers(customersRes.data.customers);
@@ -115,7 +117,7 @@ const NewSale = () => {
       setSalespersons(salespersonsRes.data.data || []);
       setUstas(ustasRes.data.data || []);
       setVendorMap(
-        (vendorsRes.data.vendors || []).reduce((acc, v) => { acc[v._id] = v.name; return acc; }, {})
+        (vendorsRes.data.vendors || []).reduce((acc, v) => { acc[v._id] = v.companyName || v.name; return acc; }, {})
       );
     } catch (error) {
       toast.error('Məlumatları yükləmək mümkün olmadı');
@@ -168,23 +170,6 @@ const NewSale = () => {
   
   const isPriceBelowMin = (item) => {
     return item.unitPrice !== '' && item.unitPrice < item.minPrice;
-  };
-
-  const calculateItemDiscount = (item) => {
-    const qty = item.quantity === '' ? 0 : item.quantity;
-    const price = item.unitPrice === '' ? 0 : item.unitPrice;
-    const recommendedPrice = item.recommendedPrice || 0;
-    
-    if (price < recommendedPrice) {
-      return (recommendedPrice - price) * qty;
-    }
-    return 0;
-  };
-
-  const calculateTotalDiscount = () => {
-    return formData.items.reduce((sum, item) => {
-      return sum + calculateItemDiscount(item);
-    }, 0);
   };
 
   const calculateSubtotal = () => {
@@ -260,15 +245,8 @@ const NewSale = () => {
         toast.error(`"${item.productName}" üçün miqdar ən azı 1 olmalıdır`);
         return;
       }
-      const available = stockMap[item.productId];
-      if (available === undefined) {
-        toast.error(`"${item.productName}" bu anbarda mövcud deyil`);
-        return;
-      }
-      if (item.quantity > available) {
-        toast.error(`"${item.productName}" üçün anbarda yalnız ${available} ədəd var`);
-        return;
-      }
+      // Overselling is allowed for store sales (stock may not be transferred yet),
+      // so insufficient stock is shown as a warning, not a hard block.
     }
 
     setShowConfirm(true);
@@ -572,6 +550,7 @@ const NewSale = () => {
                             className="form-control"
                             value={item.quantity}
                             onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
+                            onFocus={(e) => e.target.select()}
                             min="1"
                             style={{ width: '80px', borderColor: isStockInsufficient(item) ? 'var(--danger)' : '' }}
                           />
@@ -587,6 +566,7 @@ const NewSale = () => {
                             className="form-control"
                             value={item.unitPrice}
                             onChange={(e) => handleItemChange(index, 'unitPrice', e.target.value)}
+                            onFocus={(e) => e.target.select()}
                             step="0.01"
                             placeholder={item.recommendedPrice}
                             style={{ 
@@ -705,6 +685,7 @@ const NewSale = () => {
                       className="form-control"
                       value={formData.paidAmount}
                       onChange={(e) => setFormData({ ...formData, paidAmount: e.target.value === '' ? '' : parseFloat(e.target.value) || 0 })}
+                      onFocus={(e) => e.target.select()}
                       step="0.01"
                       min="0"
                     />
@@ -726,14 +707,8 @@ const NewSale = () => {
 
             <div className="card new-sale-checkout">
               <div className="new-sale-totals">
-                {calculateTotalDiscount() > 0 && (
-                  <div className="new-sale-totals-row discount">
-                    <span>Endirim</span>
-                    <span>-{formatCurrency(calculateTotalDiscount())}</span>
-                  </div>
-                )}
                 <div className="new-sale-totals-row main" style={{ borderBottom: 'none' }}>
-                  <span>Ara cəm</span>
+                  <span>Cəm</span>
                   <span>{formatCurrency(calculateSubtotal())}</span>
                 </div>
                 <div className="new-sale-totals-row" style={{ alignItems: 'center' }}>
@@ -744,6 +719,7 @@ const NewSale = () => {
                     style={{ width: '130px', textAlign: 'right' }}
                     value={formData.discount}
                     onChange={(e) => setFormData({ ...formData, discount: e.target.value })}
+                    onFocus={(e) => e.target.select()}
                     step="0.01"
                     min="0"
                     max={calculateSubtotal()}
@@ -751,7 +727,7 @@ const NewSale = () => {
                   />
                 </div>
                 <div className="new-sale-totals-row main">
-                  <span>Toplam</span>
+                  <span>YEKUN</span>
                   <span>{formatCurrency(calculateTotal())}</span>
                 </div>
                 {formData.paymentSelection === PAYMENT_SELECTION.CREDIT && formData.paidAmount > 0 && (
@@ -799,7 +775,7 @@ const NewSale = () => {
                 </div>
               )}
               <div className="new-sale-totals-row main">
-                <span>Toplam</span>
+                <span>YEKUN</span>
                 <span>{formatCurrency(calculateTotal())}</span>
               </div>
               <div className="new-sale-totals-row" style={{ color: 'var(--gray-500)' }}>
@@ -855,6 +831,7 @@ const NewSale = () => {
                   min="0"
                   value={commission.amount}
                   onChange={(e) => setCommission({ ...commission, amount: e.target.value })}
+                  onFocus={(e) => e.target.select()}
                 />
               </div>
             </div>
@@ -892,6 +869,7 @@ const NewSale = () => {
                     min="0"
                     value={row.amount}
                     onChange={(e) => updateExpenseRow(index, 'amount', e.target.value)}
+                    onFocus={(e) => e.target.select()}
                   />
                   <button
                     type="button"

@@ -18,8 +18,9 @@ class WarehouseService {
   async create(warehouseData) {
     const data = { ...warehouseData };
 
-    // Auto-generate the warehouse code if none was supplied.
-    data.code = data.code ? data.code.toUpperCase() : await this._generateCode(Warehouse, 'WH');
+    // Auto-generate the code if none was supplied: stores get ST-, storage WH-.
+    const prefix = data.isStore ? 'ST' : 'WH';
+    data.code = data.code ? data.code.toUpperCase() : await this._generateCode(Warehouse, prefix);
 
     if (await Warehouse.findOne({ code: data.code })) {
       throw new Error('Bu kod ilə anbar artıq mövcuddur');

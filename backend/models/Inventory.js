@@ -19,8 +19,9 @@ const inventorySchema = new mongoose.Schema({
   quantity: {
     type: Number,
     required: true,
-    default: 0,
-    min: [0, 'Stok mənfi ola bilməz']
+    default: 0
+    // Negative allowed: store sales may oversell (goods not yet transferred from
+    // the warehouse). The balance reconciles when stock is entered/transferred.
   },
   costPrice: {
     type: Number,

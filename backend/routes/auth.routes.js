@@ -19,6 +19,9 @@ router.post(
   authController.login
 );
 
+// Public: login-page username autocomplete (prefix search, min 2 chars).
+router.get('/usernames', authController.getUsernames);
+
 router.get('/profile', protect, authController.getProfile);
 
 router.put(

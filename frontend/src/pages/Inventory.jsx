@@ -1,11 +1,23 @@
 import { useState, useEffect, useRef } from 'react';
-import { FiPackage, FiArrowRight, FiPlus, FiEdit2, FiTrash2, FiDownload, FiUpload } from 'react-icons/fi';
-import { inventoryAPI, warehouseAPI, productAPI, vendorAPI, purchaseInvoiceAPI } from '../services/api';
+import { FiPackage, FiArrowRight, FiPlus, FiEdit2, FiTrash2, FiDownload, FiUpload, FiFileText } from 'react-icons/fi';
+import { inventoryAPI, warehouseAPI, productAPI, vendorAPI, purchaseInvoiceAPI, categoryAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
 import { BUSINESS_OWNERS } from '../config/owners';
+import ProductSearchSelect from '../components/ProductSearchSelect';
+import WarehouseSelect from '../components/WarehouseSelect';
+import SearchSelect from '../components/SearchSelect';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
+
+// Static fallback so the category never flashes the English code before the
+// category list loads.
+const CATEGORY_AZ = {
+  electric: 'Elektrik',
+  heating: 'İsidici',
+  bathroom: 'Hamam',
+  general: 'Ümumi'
+};
 
 const Inventory = () => {
   const [inventory, setInventory] = useState([]);
@@ -14,12 +26,19 @@ const Inventory = () => {
   const [vendors, setVendors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedWarehouse, setSelectedWarehouse] = useState('');
+  const [categories, setCategories] = useState([]);
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [vendorFilter, setVendorFilter] = useState('');
+  const [sortDir, setSortDir] = useState(null); // null | 'asc' | 'desc' (by quantity)
   const [showOwnerSelectModal, setShowOwnerSelectModal] = useState(false);
   const [showEntryModal, setShowEntryModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [selectedOwnerId, setSelectedOwnerId] = useState('');
+  const [showLogModal, setShowLogModal] = useState(false);
+  const [logs, setLogs] = useState([]);
+  const [logLoading, setLogLoading] = useState(false);
   const { isOwner, isSuperOwner, user } = useAuth();
 
   // A purchase invoice (faktura): one vendor + one warehouse + several product
@@ -37,39 +56,35 @@ const Inventory = () => {
   });
 
   const [transferForm, setTransferForm] = useState({
-    productId: '',
     fromWarehouseId: '',
     toWarehouseId: '',
-    quantity: 1
+    items: [{ productId: '', quantity: 1 }]
   });
 
   const [editForm, setEditForm] = useState({
     quantity: 0,
-    costPrice: ''
+    costPrice: '',
+    note: ''
   });
 
-  // Cache of "products in this location" counts for the transfer modal.
-  const [whCounts, setWhCounts] = useState({});
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const stockImportRef = useRef(null);
-
-  const loadWhCount = async (id) => {
-    if (!id || whCounts[id] !== undefined) return;
-    try {
-      const res = await inventoryAPI.getByWarehouse(id);
-      setWhCounts((prev) => ({ ...prev, [id]: (res.data.data.items || []).length }));
-    } catch {
-      /* ignore count errors */
-    }
-  };
 
   // Reference data (warehouses, products, vendors) rarely changes, so load it
   // once — not on every warehouse switch. The owner filter for the entry modal
   // is applied client-side (see entryProducts), so products needn't refetch.
   useEffect(() => {
     fetchReference();
+    categoryAPI.getAll({ type: 'product' })
+      .then((res) => setCategories(res.data.data || []))
+      .catch(() => {});
   }, []);
+
+  const categoryName = (code) => {
+    const found = categories.find((c) => c.code === code);
+    return found?.name || CATEGORY_AZ[code] || code || '-';
+  };
 
   // Only the stock list depends on the selected warehouse.
   useEffect(() => {
@@ -209,13 +224,33 @@ const Inventory = () => {
         )
         .sort(byName);
 
+  const addTransferRow = () =>
+    setTransferForm((f) => ({ ...f, items: [...f.items, { productId: '', quantity: 1 }] }));
+
+  const removeTransferRow = (i) =>
+    setTransferForm((f) => ({ ...f, items: f.items.filter((_, idx) => idx !== i) }));
+
+  const updateTransferRow = (i, field, value) =>
+    setTransferForm((f) => ({
+      ...f,
+      items: f.items.map((it, idx) => (idx === i ? { ...it, [field]: value } : it))
+    }));
+
   const handleTransfer = async (e) => {
     e.preventDefault();
+    const { fromWarehouseId, toWarehouseId, items } = transferForm;
+    if (!fromWarehouseId || !toWarehouseId) return toast.error('Mənbə və hədəf anbar seçin');
+    if (fromWarehouseId === toWarehouseId) return toast.error('Mənbə və hədəf anbar fərqli olmalıdır');
+    const valid = items
+      .filter((it) => it.productId && Number(it.quantity) >= 1)
+      .map((it) => ({ productId: it.productId, quantity: Number(it.quantity) }));
+    if (valid.length === 0) return toast.error('Ən azı bir məhsul və miqdar seçin');
+
     try {
-      await inventoryAPI.transfer(transferForm);
-      toast.success('Transfer uğurla tamamlandı');
+      const res = await inventoryAPI.transferBulk({ fromWarehouseId, toWarehouseId, items: valid });
+      toast.success(`${res.data.data.count} məhsul transfer edildi`);
       setShowTransferModal(false);
-      setTransferForm({ productId: '', fromWarehouseId: '', toWarehouseId: '', quantity: 1 });
+      setTransferForm({ fromWarehouseId: '', toWarehouseId: '', items: [{ productId: '', quantity: 1 }] });
       setWhCounts({}); // counts changed for the two locations
       fetchInventory();
     } catch (error) {
@@ -223,11 +258,33 @@ const Inventory = () => {
     }
   };
 
+  const openLog = async () => {
+    setShowLogModal(true);
+    setLogLoading(true);
+    try {
+      const res = await inventoryAPI.getTransactions({ limit: 200 });
+      setLogs(res.data.transactions || []);
+    } catch {
+      setLogs([]);
+    } finally {
+      setLogLoading(false);
+    }
+  };
+
+  const TXN_META = {
+    IN: { label: 'Giriş', sign: '+', color: 'var(--success, #16a34a)' },
+    RETURN: { label: 'Qaytarma', sign: '+', color: 'var(--success, #16a34a)' },
+    SALE: { label: 'Satış', sign: '−', color: 'var(--danger)' },
+    ADJUSTMENT: { label: 'Düzəliş', sign: '−', color: 'var(--danger)' },
+    TRANSFER: { label: 'Transfer', sign: '', color: 'var(--primary)' }
+  };
+
   const handleEdit = (item) => {
     setEditingItem(item);
     setEditForm({
       quantity: item.quantity,
-      costPrice: item.costPrice || ''
+      costPrice: item.costPrice || '',
+      note: ''
     });
     setShowEditModal(true);
   };
@@ -270,6 +327,26 @@ const Inventory = () => {
       return total + (item.quantity * (item.costPrice || 0));
     }, 0);
   };
+
+  const toggleSort = () => setSortDir((d) => (d === 'asc' ? 'desc' : d === 'desc' ? null : 'asc'));
+
+  // Apply the category + vendor filters, then the quantity sort.
+  const sortedInventory = (() => {
+    let list = inventory;
+    if (categoryFilter) {
+      list = list.filter((it) => (it.product || it.productId)?.category === categoryFilter);
+    }
+    if (vendorFilter) {
+      list = list.filter((it) => {
+        const vid = (it.product || it.productId)?.vendorId;
+        return String(vid) === String(vendorFilter);
+      });
+    }
+    if (sortDir) {
+      list = [...list].sort((a, b) => (sortDir === 'asc' ? a.quantity - b.quantity : b.quantity - a.quantity));
+    }
+    return list;
+  })();
 
   const downloadStockTemplate = async () => {
     const warehouseNames = warehouses.map((w) => w.name).filter(Boolean);
@@ -389,17 +466,21 @@ const Inventory = () => {
       return;
     }
 
-    const exportData = inventory.map((item, index) => ({
-      '#': index + 1,
-      'Məhsul': item.product?.name || '',
-      'SKU': item.product?.sku || '',
-      'Kateqoriya': item.product?.category || '',
-      'Anbar': item.warehouse?.name || '',
-      'Anbar Tipi': item.warehouse?.type === 'main' ? 'Əsas' : 'Filial',
-      'Miqdar': item.quantity,
-      ...(isOwner() && { 'Maya Dəyəri (vahid, AZN)': item.costPrice || 0 }),
-      ...(isOwner() && { 'Toplam Dəyər (AZN)': (item.quantity * (item.costPrice || 0)).toFixed(2) })
-    }));
+    const exportData = sortedInventory.map((item, index) => {
+      const product = item.product || item.productId;
+      const warehouse = item.warehouse || item.warehouseId;
+      return {
+        '#': index + 1,
+        'Məhsul': product?.name || '',
+        'SKU': product?.sku || '',
+        'Kateqoriya': categoryName(product?.category),
+        'Anbar': warehouse?.name || '',
+        'Anbar Tipi': warehouse?.type === 'main' ? 'Əsas' : 'Filial',
+        'Miqdar': item.quantity,
+        ...(isOwner() && { 'Maya Dəyəri (vahid, AZN)': item.costPrice || 0 }),
+        ...(isOwner() && { 'Toplam Dəyər (AZN)': (item.quantity * (item.costPrice || 0)).toFixed(2) })
+      };
+    });
 
     try {
       const ws = XLSX.utils.json_to_sheet(exportData);
@@ -464,6 +545,11 @@ const Inventory = () => {
           <button className="btn btn-secondary" onClick={() => setShowTransferModal(true)}>
             <FiArrowRight /> Transfer
           </button>
+          {isOwner() && (
+            <button className="btn btn-secondary" onClick={openLog}>
+              <FiFileText /> Jurnal
+            </button>
+          )}
         </div>
       </div>
 
@@ -487,25 +573,64 @@ const Inventory = () => {
       )}
 
       <div className="card">
-        <div style={{ marginBottom: '1rem' }}>
-          <select
-            className="form-control"
-            style={{ width: '300px' }}
-            value={selectedWarehouse}
-            onChange={(e) => setSelectedWarehouse(e.target.value)}
-          >
-            <option value="">Bütün Anbarlar</option>
-            {warehouses.map(wh => (
-              <option key={wh._id} value={wh._id}>{wh.name}</option>
-            ))}
-          </select>
+        <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.25rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 240 }}>
+            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--gray-500)' }}>Anbar / Mağaza</label>
+            <WarehouseSelect
+              warehouses={warehouses}
+              value={selectedWarehouse}
+              onChange={setSelectedWarehouse}
+              allowAll
+              allLabel="Bütün Anbarlar"
+              placeholder="Bütün Anbarlar"
+            />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--gray-500)' }}>Kateqoriya</label>
+            <select
+              className="form-control"
+              style={{ minWidth: 180 }}
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+            >
+              <option value="">Bütün Kateqoriyalar</option>
+              {categories.map((cat) => (
+                <option key={cat.code} value={cat.code}>{cat.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--gray-500)' }}>İstehsalçı / Vendor</label>
+            <select
+              className="form-control"
+              style={{ minWidth: 180 }}
+              value={vendorFilter}
+              onChange={(e) => setVendorFilter(e.target.value)}
+            >
+              <option value="">Bütün Vendorlar</option>
+              {vendors.map((v) => (
+                <option key={v._id} value={v._id}>{v.companyName || v.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {(selectedWarehouse || categoryFilter || vendorFilter || sortDir) && (
+            <button
+              className="btn btn-secondary"
+              onClick={() => { setSelectedWarehouse(''); setCategoryFilter(''); setVendorFilter(''); setSortDir(null); }}
+            >
+              Təmizlə
+            </button>
+          )}
         </div>
 
         {loading && inventory.length === 0 ? (
           <div className="loading">
             <div className="spinner"></div>
           </div>
-        ) : inventory.length === 0 ? (
+        ) : sortedInventory.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon"><FiPackage /></div>
             <p className="empty-state-text">Stok məlumatı yoxdur</p>
@@ -519,13 +644,19 @@ const Inventory = () => {
                   <th>SKU</th>
                   <th>Kateqoriya</th>
                   {!selectedWarehouse && <th>Anbar</th>}
-                  <th>Miqdar</th>
+                  <th
+                    onClick={toggleSort}
+                    style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
+                    title="Sırala (artan / azalan)"
+                  >
+                    Miqdar {sortDir === 'asc' ? '▲' : sortDir === 'desc' ? '▼' : '⇅'}
+                  </th>
                   {isOwner() && <th>Dəyər <span style={{ color: '#dc2626', fontWeight: 'bold' }}>({formatCurrency(getTotalValue())})</span></th>}
                   {isOwner() && <th style={{ width: '100px' }}></th>}
                 </tr>
               </thead>
               <tbody>
-                {inventory.map((item, index) => {
+                {sortedInventory.map((item, index) => {
                   const product = item.product || item.productId;
                   const warehouse = item.warehouseId;
                   return (
@@ -534,7 +665,7 @@ const Inventory = () => {
                       <td>{product?.sku || '-'}</td>
                       <td>
                         <span className="badge badge-secondary">
-                          {product?.category || '-'}
+                          {categoryName(product?.category)}
                         </span>
                       </td>
                       {!selectedWarehouse && <td>{warehouse?.name || '-'}</td>}
@@ -627,32 +758,24 @@ const Inventory = () => {
                   <div style={{ flex: '1 1 300px', minWidth: 0 }}>
                     <div className="form-group">
                       <label className="form-label">Vendor *</label>
-                      <select
-                        className="form-control"
+                      <SearchSelect
+                        items={vendors}
                         value={entryForm.vendorId}
-                        onChange={(e) => setEntryForm({ ...entryForm, vendorId: e.target.value })}
-                        required
-                      >
-                        <option value="">Seçin...</option>
-                        {vendors.map(v => (
-                          <option key={v._id} value={v._id}>{v.companyName ? v.companyName : ''}{v.name ? ` (${v.name})` : ''}</option>
-                     
-                        ))}
-                      </select>
+                        onChange={(id) => setEntryForm({ ...entryForm, vendorId: id })}
+                        getLabel={(v) => v.companyName || v.name}
+                        getSub={(v) => (v.companyName && v.name ? v.name : (v.phone || ''))}
+                        match={(v, q) => (v.companyName || '').toLowerCase().includes(q) || (v.name || '').toLowerCase().includes(q)}
+                        placeholder="Vendor axtar..."
+                      />
                     </div>
                     <div className="form-group">
                       <label className="form-label">Anbar *</label>
-                      <select
-                        className="form-control"
+                      <WarehouseSelect
+                        warehouses={warehouses}
                         value={entryForm.warehouseId}
-                        onChange={(e) => setEntryForm({ ...entryForm, warehouseId: e.target.value })}
-                        required
-                      >
-                        <option value="">Seçin...</option>
-                        {warehouses.map(wh => (
-                          <option key={wh._id} value={wh._id}>{wh.name}</option>
-                        ))}
-                      </select>
+                        onChange={(id) => setEntryForm({ ...entryForm, warehouseId: id })}
+                        placeholder="Anbar seçin"
+                      />
                     </div>
                     <div className="form-group">
                       <label className="form-label">Faktura No</label>
@@ -733,17 +856,12 @@ const Inventory = () => {
                         <tbody>
                           {entryForm.items.map((item, index) => (
                             <tr key={index}>
-                              <td>
-                                <select
-                                  className="form-control"
+                              <td style={{ minWidth: 200 }}>
+                                <ProductSearchSelect
+                                  products={vendorSortedProducts}
                                   value={item.productId}
-                                  onChange={(e) => updateEntryItem(index, 'productId', e.target.value)}
-                                >
-                                  <option value="">Seçin...</option>
-                                  {vendorSortedProducts.map(p => (
-                                    <option key={p._id} value={p._id}>{p.name} ({p.sku})</option>
-                                  ))}
-                                </select>
+                                  onChange={(id) => updateEntryItem(index, 'productId', id)}
+                                />
                               </td>
                               <td>
                                 <input
@@ -803,98 +921,69 @@ const Inventory = () => {
 
       {showTransferModal && (
         <div className="modal-overlay" onClick={() => setShowTransferModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3 className="modal-title">Anbarlar Arası Transfer</h3>
               <button className="modal-close" onClick={() => setShowTransferModal(false)}>&times;</button>
             </div>
             <form onSubmit={handleTransfer}>
               <div className="modal-body">
-                <div className="form-group">
-                  <label className="form-label">Məhsul *</label>
-                  <select
-                    className="form-control"
-                    value={transferForm.productId}
-                    onChange={(e) => setTransferForm({ ...transferForm, productId: e.target.value })}
-                    required
-                  >
-                    <option value="">Seçin...</option>
-                    {products.map(p => (
-                      <option key={p._id} value={p._id}>{p.name} ({p.sku})</option>
-                    ))}
-                  </select>
+                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                  <div className="form-group" style={{ flex: 1, minWidth: 200 }}>
+                    <label className="form-label">Haradan (Anbar / Mağaza) *</label>
+                    <WarehouseSelect
+                      warehouses={warehouses}
+                      value={transferForm.fromWarehouseId}
+                      exclude={transferForm.toWarehouseId}
+                      onChange={(id) => setTransferForm({ ...transferForm, fromWarehouseId: id })}
+                    />
+                  </div>
+                  <div className="form-group" style={{ flex: 1, minWidth: 200 }}>
+                    <label className="form-label">Hara (Anbar / Mağaza) *</label>
+                    <WarehouseSelect
+                      warehouses={warehouses}
+                      value={transferForm.toWarehouseId}
+                      exclude={transferForm.fromWarehouseId}
+                      onChange={(id) => setTransferForm({ ...transferForm, toWarehouseId: id })}
+                    />
+                  </div>
                 </div>
-                <div className="form-group">
-                  <label className="form-label">Haradan (Anbar / Mağaza) *</label>
-                  <select
-                    className="form-control"
-                    value={transferForm.fromWarehouseId}
-                    onChange={(e) => {
-                      setTransferForm({ ...transferForm, fromWarehouseId: e.target.value });
-                      loadWhCount(e.target.value);
-                    }}
-                    required
-                  >
-                    <option value="">Seçin...</option>
-                    <optgroup label="Anbarlar">
-                      {warehouses.filter(wh => !wh.isStore && wh._id !== transferForm.toWarehouseId).map(wh => (
-                        <option key={wh._id} value={wh._id}>{wh.name}</option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="Mağazalar">
-                      {warehouses.filter(wh => wh.isStore && wh._id !== transferForm.toWarehouseId).map(wh => (
-                        <option key={wh._id} value={wh._id}>{wh.name}</option>
-                      ))}
-                    </optgroup>
-                  </select>
-                  {transferForm.fromWarehouseId && whCounts[transferForm.fromWarehouseId] !== undefined && (
-                    <div style={{ fontSize: '0.75rem', color: 'var(--gray-500)', marginTop: '4px' }}>
-                      Bu məkanda {whCounts[transferForm.fromWarehouseId]} məhsul var
+
+                <label className="form-label" style={{ marginTop: '0.5rem' }}>Məhsullar * ({transferForm.items.length})</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: 320, overflowY: 'auto', paddingRight: 4 }}>
+                  {transferForm.items.map((it, i) => (
+                    <div key={i} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <ProductSearchSelect
+                        products={products}
+                        value={it.productId}
+                        onChange={(id) => updateTransferRow(i, 'productId', id)}
+                      />
+                      <input
+                        type="number"
+                        className="form-control"
+                        style={{ width: 90 }}
+                        min="1"
+                        value={it.quantity}
+                        onChange={(e) => updateTransferRow(i, 'quantity', e.target.value)}
+                        onFocus={(e) => e.target.select()}
+                        placeholder="Miqdar"
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        style={{ color: 'var(--danger)' }}
+                        onClick={() => removeTransferRow(i)}
+                        disabled={transferForm.items.length === 1}
+                        title="Sətri sil"
+                      >
+                        <FiTrash2 />
+                      </button>
                     </div>
-                  )}
+                  ))}
                 </div>
-                <div className="form-group">
-                  <label className="form-label">Hara (Anbar / Mağaza) *</label>
-                  <select
-                    className="form-control"
-                    value={transferForm.toWarehouseId}
-                    onChange={(e) => {
-                      setTransferForm({ ...transferForm, toWarehouseId: e.target.value });
-                      loadWhCount(e.target.value);
-                    }}
-                    required
-                  >
-                    <option value="">Seçin...</option>
-                    <optgroup label="Anbarlar">
-                      {warehouses.filter(wh => !wh.isStore && wh._id !== transferForm.fromWarehouseId).map(wh => (
-                        <option key={wh._id} value={wh._id}>{wh.name}</option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="Mağazalar">
-                      {warehouses.filter(wh => wh.isStore && wh._id !== transferForm.fromWarehouseId).map(wh => (
-                        <option key={wh._id} value={wh._id}>{wh.name}</option>
-                      ))}
-                    </optgroup>
-                  </select>
-                  {transferForm.toWarehouseId && whCounts[transferForm.toWarehouseId] !== undefined && (
-                    <div style={{ fontSize: '0.75rem', color: 'var(--gray-500)', marginTop: '4px' }}>
-                      Bu məkanda {whCounts[transferForm.toWarehouseId]} məhsul var
-                    </div>
-                  )}
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Miqdar *</label>
-                  <input
-                    type="number"
-                    className="form-control"
-                    value={transferForm.quantity === 0 ? '' : transferForm.quantity}
-                    onChange={(e) => setTransferForm({ ...transferForm, quantity: Number(e.target.value) })}
-                    min="1"
-                    required
-                  />
-            
-                </div>
-          
+                <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: '0.5rem' }} onClick={addTransferRow}>
+                  <FiPlus /> Məhsul əlavə et
+                </button>
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-secondary" onClick={() => setShowTransferModal(false)}>
@@ -946,6 +1035,19 @@ const Inventory = () => {
                     required
                   />
                 </div>
+                <div className="form-group">
+                  <label className="form-label">Səbəb / Qeyd</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={editForm.note}
+                    onChange={(e) => setEditForm({ ...editForm, note: e.target.value })}
+                    placeholder="Məs: sayım düzəlişi, zədələnmə, səhv giriş..."
+                  />
+                  <div style={{ fontSize: '0.72rem', color: 'var(--gray-500)', marginTop: 4 }}>
+                    Dəyişiklik jurnala yazılır (artım → giriş, azalma → düzəliş).
+                  </div>
+                </div>
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-secondary" onClick={() => setShowEditModal(false)}>
@@ -954,6 +1056,63 @@ const Inventory = () => {
                 <button type="submit" className="btn btn-primary">Yadda saxla</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showLogModal && (
+        <div className="modal-overlay" onClick={() => setShowLogModal(false)}>
+          <div className="modal" style={{ maxWidth: 820 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Anbar jurnalı (hərəkətlər)</h3>
+              <button className="modal-close" onClick={() => setShowLogModal(false)}>&times;</button>
+            </div>
+            <div className="modal-body">
+              {logLoading ? (
+                <div className="loading"><div className="spinner"></div></div>
+              ) : logs.length === 0 ? (
+                <div className="empty-state" style={{ padding: '2rem' }}>
+                  <p className="empty-state-text">Hərəkət yoxdur</p>
+                </div>
+              ) : (
+                <div className="table-container" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Tarix</th>
+                        <th>Məhsul</th>
+                        <th>Növ</th>
+                        <th style={{ textAlign: 'right' }}>Miqdar</th>
+                        <th>Anbar</th>
+                        <th>Qeyd</th>
+                        <th>İstifadəçi</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {logs.map((t) => {
+                        const m = TXN_META[t.type] || { label: t.type, sign: '', color: 'inherit' };
+                        const wh = t.type === 'TRANSFER'
+                          ? `${t.fromWarehouseId?.name || '-'} → ${t.toWarehouseId?.name || '-'}`
+                          : (t.toWarehouseId?.name || t.fromWarehouseId?.name || '-');
+                        return (
+                          <tr key={t._id}>
+                            <td style={{ whiteSpace: 'nowrap', fontSize: '0.8125rem' }}>
+                              {t.createdAt ? new Date(t.createdAt).toLocaleString('az-AZ', { dateStyle: 'short', timeStyle: 'short' }) : '-'}
+                            </td>
+                            <td>{t.productId?.name || '-'}<div style={{ fontSize: '0.72rem', color: 'var(--gray-400)' }}>{t.productId?.sku}</div></td>
+                            <td><span style={{ color: m.color, fontWeight: 600, fontSize: '0.8125rem' }}>{m.label}</span></td>
+                            <td style={{ textAlign: 'right', fontWeight: 600, color: m.color, whiteSpace: 'nowrap' }}>{m.sign}{t.quantity}</td>
+                            <td style={{ fontSize: '0.8125rem' }}>{wh}</td>
+                            <td style={{ fontSize: '0.8125rem', color: 'var(--gray-600)' }}>{t.note || '-'}</td>
+                            <td style={{ fontSize: '0.8125rem' }}>{t.createdBy?.name || '-'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

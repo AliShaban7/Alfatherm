@@ -9,9 +9,10 @@ router.use(protect);
 router.use(ownerDataIsolation);
 router.use(canSeeCostPrice);
 
+// Create/import are allowed for salespeople too (to register locally-bought
+// goods), but stay scoped to the caller's own ownerId by the controller.
 router.post(
   '/',
-  ownerOnly,
   productValidator.createProductValidation,
   validateRequest,
   productController.create
@@ -22,7 +23,7 @@ router.get('/', productController.getAll);
 // Static path before '/:id' so it isn't captured as an id.
 router.get('/options', productController.getOptions);
 
-router.post('/import', ownerOnly, productController.importProducts);
+router.post('/import', productController.importProducts);
 
 router.get('/:id', productController.getById);
 

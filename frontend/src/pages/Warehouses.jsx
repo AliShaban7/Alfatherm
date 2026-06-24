@@ -39,9 +39,10 @@ const Warehouses = () => {
     e.preventDefault();
     try {
       if (editingWarehouse) {
-        // Don't touch type/code on edit — only name, address and store flag.
+        // Editable: name, address, store flag, and code (e.g. WH-005 → ST-001).
         await warehouseAPI.update(editingWarehouse._id, {
           name: formData.name,
+          code: formData.code,
           address: formData.address,
           isStore: formData.isStore
         });
@@ -219,13 +220,21 @@ const Warehouses = () => {
                   />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Anbar Kodu</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    value={editingWarehouse ? formData.code : 'Avtomatik yaradılacaq'}
-                    disabled
-                  />
+                  <label className="form-label">Kod</label>
+                  {editingWarehouse ? (
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={formData.code}
+                      onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
+                      placeholder="Məs: ST-001"
+                    />
+                  ) : (
+                    <input type="text" className="form-control" value="Avtomatik yaradılacaq" disabled />
+                  )}
+                  <div style={{ fontSize: '0.75rem', color: 'var(--gray-500)', marginTop: '4px' }}>
+                    Mağaza üçün ST-, anbar üçün WH-.
+                  </div>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Tip *</label>

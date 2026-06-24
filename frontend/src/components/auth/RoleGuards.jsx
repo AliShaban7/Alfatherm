@@ -13,7 +13,7 @@ export const HomeRedirect = () => {
     );
   }
 
-  return isEmployee() ? <Navigate to="/sales" replace /> : <Dashboard />;
+  return isEmployee() ? <Navigate to="/my-sales" replace /> : <Dashboard />;
 };
 
 export const OwnerRoute = ({ children }) => {
@@ -28,7 +28,7 @@ export const OwnerRoute = ({ children }) => {
   }
 
   if (isEmployee()) {
-    return <Navigate to="/sales" replace />;
+    return <Navigate to="/my-sales" replace />;
   }
 
   return children;

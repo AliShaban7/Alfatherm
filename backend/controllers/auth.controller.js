@@ -7,6 +7,13 @@ exports.getUsers = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
+exports.getUsernames = async (req, res, next) => {
+  try {
+    const data = await authService.searchUsernames(req.query.q);
+    res.json({ success: true, data });
+  } catch (error) { next(error); }
+};
+
 exports.updateUser = async (req, res, next) => {
   try {
     const user = await authService.updateUser(req.params.id, req.body);

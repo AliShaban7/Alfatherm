@@ -93,7 +93,8 @@ export const authAPI = {
   login: (data) => api.post('/auth/login', data),
   register: (data) => api.post('/auth/register', data),
   getProfile: () => api.get('/auth/profile'),
-  changePassword: (data) => api.put('/auth/change-password', data)
+  changePassword: (data) => api.put('/auth/change-password', data),
+  getUsernames: (q) => api.get('/auth/usernames', { params: { q } })
 };
 
 export const userAPI = {
@@ -124,6 +125,7 @@ export const inventoryAPI = {
   productEntry: (data) => api.post('/inventory/entry', data).then(r => { clearApiCache(); return r; }),
   importStock: (rows) => api.post('/inventory/import-stock', { rows }, { timeout: 120000 }).then(r => { clearApiCache(); return r; }),
   transfer: (data) => api.post('/inventory/transfer', data).then(r => { clearApiCache(); return r; }),
+  transferBulk: (data) => api.post('/inventory/transfer-bulk', data).then(r => { clearApiCache(); return r; }),
   update: (id, data) => api.put(`/inventory/${id}`, data).then(r => { clearApiCache(); return r; }),
   delete: (id) => api.delete(`/inventory/${id}`).then(r => { clearApiCache(); return r; })
 };
@@ -203,6 +205,10 @@ export const reportAPI = {
 
 export const salespersonAPI = {
   getAll: (params) => api.get('/salespersons', { params }),
+  getMySummary: (params) => api.get('/salespersons/me/summary', { params }),
+  getMyCustomers: () => api.get('/salespersons/me/customers'),
+  getTagStats: (params) => api.get('/salespersons/stats', { params }),
+  getTagDebtors: (id, params) => api.get(`/salespersons/${id}/debtors`, { params }),
   getById: (id) => api.get(`/salespersons/${id}`),
   create: (data) => api.post('/salespersons', data).then((r) => { clearApiCache(); return r; }),
   update: (id, data) => api.put(`/salespersons/${id}`, data).then((r) => { clearApiCache(); return r; }),

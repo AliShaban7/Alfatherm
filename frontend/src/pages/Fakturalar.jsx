@@ -244,7 +244,7 @@ const Fakturalar = () => {
             <button
               className="btn btn-secondary"
               onClick={downloadTemplate}
-              title="Faktura idxal şablonu"
+              title="Faktura yükləmə şablonu"
               style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
             >
               <FiDownload /> Şablon
@@ -255,7 +255,7 @@ const Fakturalar = () => {
               disabled={importing}
               style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
             >
-              <FiUpload /> {importing ? 'İdxal olunur...' : 'Faktura idxal'}
+              <FiUpload /> {importing ? 'Əlavə olunur...' : 'Faktura Yüklə'}
             </button>
             <input type="file" ref={importRef} accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleImportFile} />
           </div>
@@ -318,7 +318,7 @@ const Fakturalar = () => {
                           )}
                         </td>
                         <td>{format(new Date(inv.date), 'dd.MM.yyyy')}</td>
-                        <td>{inv.vendorId?.name || inv.vendorName || '-'}</td>
+                        <td>{inv.vendorId?.companyName || inv.vendorName || '-'}</td>
                         <td>{inv.items?.length || 0}</td>
                         <td><strong>{formatCurrency(inv.totalAmount)}</strong></td>
                         <td style={{ color: inv.remainingAmount > 0 ? 'var(--danger)' : 'inherit' }}>
@@ -366,7 +366,7 @@ const Fakturalar = () => {
             </div>
             <div className="modal-body">
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginBottom: '1rem', fontSize: '0.875rem' }}>
-                <div><span style={{ color: 'var(--gray-500)' }}>Vendor:</span> <strong>{detail.vendorId?.name || detail.vendorName}</strong></div>
+                <div><span style={{ color: 'var(--gray-500)' }}>Vendor:</span> <strong>{detail.vendorId?.companyName || detail.vendorName || detail.vendorId?.name}</strong></div>
                 <div><span style={{ color: 'var(--gray-500)' }}>Anbar:</span> <strong>{detail.warehouseId?.name || detail.warehouseName}</strong></div>
                 <div><span style={{ color: 'var(--gray-500)' }}>Tarix:</span> <strong>{format(new Date(detail.date), 'dd.MM.yyyy')}</strong></div>
                 {detail.vendorInvoiceNumber && (

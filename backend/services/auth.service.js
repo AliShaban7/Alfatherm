@@ -60,6 +60,20 @@ class AuthService {
     };
   }
 
+  // Login-page autocomplete: return active users whose email/name starts with the
+  // typed prefix, so a salesperson can type a few letters and pick their account.
+  async searchUsernames(q) {
+    const term = String(q || '').trim();
+    if (term.length < 2) return [];
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const rx = new RegExp('^' + escaped, 'i');
+    return User.find({ isActive: true, $or: [{ email: rx }, { name: rx }] })
+      .select('name email -_id')
+      .sort({ email: 1 })
+      .limit(8)
+      .lean();
+  }
+
   async login(email, password) {
     const normalizedEmail = String(email).trim().toLowerCase();
     const user = await User.findOne({ email: normalizedEmail }).select('+password');
