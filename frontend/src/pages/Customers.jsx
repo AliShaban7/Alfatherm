@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { FiPlus, FiSearch, FiEdit2, FiTrash2 } from 'react-icons/fi';
 import { customerAPI } from '../services/api';
 import { toast } from 'react-toastify';
-import { useAuth } from '../context/AuthContext';
 import CustomerFormModal, { EMPTY_CUSTOMER_FORM } from '../components/customers/CustomerFormModal';
 
 const CUSTOMER_TYPES = [
@@ -12,7 +11,6 @@ const CUSTOMER_TYPES = [
 ];
 
 const Customers = () => {
-  const { isEmployee } = useAuth();
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -192,19 +190,14 @@ const Customers = () => {
                       {formatCurrency(customer.totalDebt || 0)}
                     </td>
                     <td>
-                      {/* Editing/deleting the shared customer master is owner/director
-                          only — the backend enforces it, so hide the buttons from
-                          salespeople rather than showing an action that 403s. */}
-                      {!isEmployee() && (
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          <button className="btn btn-sm btn-secondary" onClick={() => handleEdit(customer)}>
-                            <FiEdit2 />
-                          </button>
-                          <button className="btn btn-sm" style={{ color: 'var(--danger)' }} onClick={() => handleDelete(customer._id)}>
-                            <FiTrash2 />
-                          </button>
-                        </div>
-                      )}
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button className="btn btn-sm btn-secondary" onClick={() => handleEdit(customer)}>
+                          <FiEdit2 />
+                        </button>
+                        <button className="btn btn-sm" style={{ color: 'var(--danger)' }} onClick={() => handleDelete(customer._id)}>
+                          <FiTrash2 />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -43,24 +43,7 @@ const Sales = () => {
     fetchSales(prepend);
   }, [filters.paymentType, pagination.page]);
 
-  // Apply the current search/date/payment filters. Reset to page 1 first (a new
-  // filter shouldn't keep you on a now-out-of-range page); if already on page 1
-  // the page state won't change, so trigger the fetch directly.
-  const applyFilters = () => {
-    if (pagination.page !== 1) {
-      setPagination((p) => ({ ...p, page: 1 }));
-    } else {
-      fetchSales();
-    }
-  };
-
   const fetchSales = async (prependSale) => {
-    // Guard against being called with a click/keyboard event (onClick={fetchSales}
-    // would pass the synthetic event as `prependSale`). Only a real sale object
-    // — which always has an _id — is a valid prepend.
-    if (prependSale && !prependSale._id) {
-      prependSale = undefined;
-    }
     const showPrependFirst = prependSale && pagination.page === 1;
     if (showPrependFirst) {
       setSales([prependSale]);
@@ -104,7 +87,7 @@ const Sales = () => {
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('az-AZ', {
       minimumFractionDigits: 2
-    }).format(Number(amount) || 0) + ' AZN';
+    }).format(amount) + ' AZN';
   };
 
   const getPaymentBadge = (sale) => {
@@ -199,7 +182,6 @@ const Sales = () => {
               placeholder="Satış nömrəsi ilə axtar..."
               value={filters.search}
               onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-              onKeyDown={(e) => { if (e.key === 'Enter') applyFilters(); }}
               style={{ paddingLeft: '2.5rem' }}
             />
           </div>
