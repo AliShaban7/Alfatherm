@@ -45,7 +45,7 @@ const WarehouseSelect = ({
   );
 
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
+    <div ref={ref} style={{ position: 'relative', zIndex: open ? 1000 : undefined }}>
       <button
         type="button"
         className="form-control"
