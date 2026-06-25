@@ -7,6 +7,7 @@ import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
 import { format } from 'date-fns';
 import { printSaleReceipt } from '../utils/receipt';
+import { BUSINESS_OWNERS } from '../config/owners';
 import {
   PAYMENT_SELECTION,
   BANK_METHOD,
@@ -187,6 +188,28 @@ const NewSale = () => {
   };
 
   const calculateTotal = () => calculateSubtotal() - getDiscount();
+
+  // Per-owner breakdown of the whole-sale discount, by each owner's share of the
+  // cart subtotal — the same proportion the backend uses to split it across
+  // owners. Only shown when the cart mixes more than one owner's products.
+  const ownerName = (oid) =>
+    BUSINESS_OWNERS.find((o) => o.id === oid)?.name ||
+    (oid === 'owner_admin_000' ? 'Mağaza' : 'Digər');
+
+  const discountSplit = () => {
+    const disc = getDiscount();
+    const sub = calculateSubtotal();
+    if (disc <= 0 || sub <= 0) return [];
+    const byOwner = {};
+    formData.items.forEach((item) => {
+      const oid = products.find((p) => p._id === item.productId)?.ownerId || 'unknown';
+      const line = (parseFloat(item.unitPrice) || 0) * (parseInt(item.quantity) || 0);
+      byOwner[oid] = (byOwner[oid] || 0) + line;
+    });
+    const ids = Object.keys(byOwner);
+    if (ids.length < 2) return [];
+    return ids.map((oid) => ({ oid, name: ownerName(oid), amount: disc * (byOwner[oid] / sub) }));
+  };
 
   const addExpenseRow = () =>
     setSaleExpenses((rows) => [...rows, { category: 'delivery', amount: '' }]);
@@ -726,6 +749,16 @@ const NewSale = () => {
                     placeholder="0"
                   />
                 </div>
+                {discountSplit().map((s) => (
+                  <div
+                    key={s.oid}
+                    className="new-sale-totals-row"
+                    style={{ fontSize: '0.8rem', color: 'var(--gray-500)' }}
+                  >
+                    <span style={{ paddingLeft: '1rem' }}>↳ {s.name}</span>
+                    <span>−{formatCurrency(s.amount)}</span>
+                  </div>
+                ))}
                 <div className="new-sale-totals-row main">
                   <span>YEKUN</span>
                   <span>{formatCurrency(calculateTotal())}</span>
