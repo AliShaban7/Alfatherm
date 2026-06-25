@@ -47,7 +47,9 @@ const MySales = () => {
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
-  const shownStats = tag === 'all' ? stats : stats.filter((s) => String(s._id) === String(tag));
+  // Always show every salesperson so the stats table stays a clickable list; the
+  // selected one is highlighted and drives the Debitorlar section below.
+  const shownStats = stats;
   const totalOutstanding = debtors.reduce((sum, d) => sum + (d.remainingAmount || 0), 0);
 
   return (
@@ -89,6 +91,7 @@ const MySales = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
           <FiUsers style={{ color: 'var(--primary)' }} />
           <h3 style={{ margin: 0, fontWeight: 600 }}>Satıcı statistikası</h3>
+          <span style={{ fontSize: '0.78rem', color: 'var(--gray-400)' }}>— borcları görmək üçün satıcıya klikləyin</span>
         </div>
         {loading ? (
           <div className="loading"><div className="spinner" /></div>
@@ -109,8 +112,15 @@ const MySales = () => {
                 </tr>
               </thead>
               <tbody>
-                {shownStats.map((s) => (
-                  <tr key={s._id}>
+                {shownStats.map((s) => {
+                  const selected = String(s._id) === String(tag);
+                  return (
+                  <tr
+                    key={s._id}
+                    onClick={() => setTag(selected ? 'all' : String(s._id))}
+                    style={{ cursor: 'pointer', background: selected ? 'var(--gray-100, #f1f5f9)' : undefined }}
+                    title="Bu satıcının borclarını göstər"
+                  >
                     <td><strong>{s.salespersonName}</strong></td>
                     <td>{s.salesCount}</td>
                     <td>{fmt(s.totalAmount)}</td>
@@ -119,7 +129,8 @@ const MySales = () => {
                     <td style={{ color: 'var(--success, #16a34a)', fontWeight: 600 }}>{fmt(s.bonusEarned)}</td>
                     <td style={{ color: 'var(--warning, #f59e0b)' }}>{fmt(s.bonusPending)}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
