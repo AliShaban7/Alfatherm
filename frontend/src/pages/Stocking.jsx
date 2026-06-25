@@ -29,9 +29,10 @@ const Stocking = () => {
           warehouseAPI.getAll()
         ]);
         setProducts(pRes.data.products || []);
-        const whs = wRes.data.data || [];
+        // Sales accounts stock the store, not the warehouses — list Mağazalar only.
+        const whs = (wRes.data.data || []).filter((w) => w.isStore);
         setWarehouses(whs);
-        const store = whs.find((w) => w.isStore) || whs[0];
+        const store = whs[0];
         if (store) setWarehouseId(store._id);
       } catch {
         toast.error('Məlumatları yükləmək mümkün olmadı');
