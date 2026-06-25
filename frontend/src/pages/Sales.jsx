@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { FiPlus, FiSearch, FiEye, FiFilter, FiPrinter, FiTrash2 } from 'react-icons/fi';
-import { saleAPI } from '../services/api';
+import { saleAPI, salespersonAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { format } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
@@ -24,9 +24,11 @@ const Sales = () => {
   const [filters, setFilters] = useState({
     search: '',
     paymentType: '',
+    salespersonId: '',
     startDate: todayLocal(),
     endDate: todayLocal()
   });
+  const [salespersons, setSalespersons] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, pages: 1 });
   const [detailSale, setDetailSale] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -41,7 +43,14 @@ const Sales = () => {
       window.history.replaceState({}, document.title);
     }
     fetchSales(prepend);
-  }, [filters.paymentType, pagination.page]);
+  }, [filters.paymentType, filters.salespersonId, pagination.page]);
+
+  // Salesperson list for the filter dropdown (so owners can see each one's sales).
+  useEffect(() => {
+    salespersonAPI.getAll()
+      .then((res) => setSalespersons(res.data.data || []))
+      .catch(() => {});
+  }, []);
 
   const fetchSales = async (prependSale) => {
     const showPrependFirst = prependSale && pagination.page === 1;
@@ -195,6 +204,20 @@ const Sales = () => {
             <option value="prepaid">Nağd / Bank</option>
             <option value="credit">Nisyə</option>
           </select>
+          <select
+            className="form-control"
+            style={{ width: 'auto' }}
+            value={filters.salespersonId}
+            onChange={(e) => {
+              setFilters({ ...filters, salespersonId: e.target.value });
+              setPagination((p) => ({ ...p, page: 1 }));
+            }}
+          >
+            <option value="">Bütün satıcılar</option>
+            {salespersons.map((sp) => (
+              <option key={sp._id} value={sp._id}>{sp.name}</option>
+            ))}
+          </select>
           <input
             type="date"
             className="form-control"
@@ -232,6 +255,7 @@ const Sales = () => {
                     <th>Satış No</th>
                     <th>Tarix</th>
                     <th>Müştəri</th>
+                    <th>Satıcı</th>
                     <th>Anbar</th>
                     <th>Ödəniş</th>
                     <th>Məbləğ</th>
@@ -272,6 +296,7 @@ const Sales = () => {
                       </td>
                       <td>{format(new Date(sale.date), 'dd.MM.yyyy HH:mm')}</td>
                       <td>{sale.customerId?.name || '-'}</td>
+                      <td>{sale.salespersonName || '-'}</td>
                       <td>{sale.warehouseId?.name || sale.branchId?.name || '-'}</td>
                       <td>{getPaymentBadge(sale)}</td>
                       <td><strong>{formatCurrency(sale.totalAmount)}</strong></td>

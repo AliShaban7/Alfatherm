@@ -460,6 +460,9 @@ class SaleService {
     if (filters.customerId && mongoose.isValidObjectId(filters.customerId)) {
       match.customerId = new mongoose.Types.ObjectId(filters.customerId);
     }
+    if (filters.salespersonId && mongoose.isValidObjectId(filters.salespersonId)) {
+      match.salespersonId = new mongoose.Types.ObjectId(filters.salespersonId);
+    }
     if (filters.paymentType) {
       match.paymentType = filters.paymentType;
     }
