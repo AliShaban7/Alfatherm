@@ -1,16 +1,26 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { FiPlus, FiBox, FiSearch, FiPackage, FiLayers } from 'react-icons/fi';
-import { productAPI, warehouseAPI, inventoryAPI } from '../services/api';
+import { productAPI, warehouseAPI, inventoryAPI, categoryAPI } from '../services/api';
 import ProductSearchSelect from '../components/ProductSearchSelect';
 import WarehouseSelect from '../components/WarehouseSelect';
 import { toast } from 'react-toastify';
+
+// Fallback Azerbaijani names for the seeded category codes (used when the
+// categories collection hasn't loaded or lacks a code).
+const CATEGORY_AZ = {
+  electric: 'Elektrik',
+  heating: 'İsidici',
+  bathroom: 'Hamam',
+  general: 'Ümumi'
+};
 
 // Salesperson stocking screen: register goods bought locally (Mal Girişi, no
 // vendor) into the store, and see what's currently in stock. All scoped to the
 // salesperson's own (store) owner by the backend.
 const Stocking = () => {
   const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
   const [warehouseId, setWarehouseId] = useState('');
   const [stock, setStock] = useState([]);
@@ -23,12 +33,14 @@ const Stocking = () => {
   useEffect(() => {
     (async () => {
       try {
-        const [pRes, wRes] = await Promise.all([
+        const [pRes, wRes, cRes] = await Promise.all([
           // Only products you can actually stock (your own / store namespace).
           productAPI.getAll({ limit: 1000, ownOnly: 'true' }),
-          warehouseAPI.getAll()
+          warehouseAPI.getAll(),
+          categoryAPI.getAll({ type: 'product' }).catch(() => ({ data: { data: [] } }))
         ]);
         setProducts(pRes.data.products || []);
+        setCategories(cRes.data.data || []);
         // Sales accounts stock the store, not the warehouses — list Mağazalar only.
         const whs = (wRes.data.data || []).filter((w) => w.isStore);
         setWarehouses(whs);
@@ -39,6 +51,11 @@ const Stocking = () => {
       }
     })();
   }, []);
+
+  // Show the Azerbaijani category name (Ad), not the raw code — synced with the
+  // categories collection, with a fallback for the seeded codes.
+  const categoryName = (code) =>
+    categories.find((c) => c.code === code)?.name || CATEGORY_AZ[code] || code || '-';
 
   const loadStock = useCallback(async () => {
     if (!warehouseId) return;
@@ -216,7 +233,7 @@ const Stocking = () => {
                       <tr key={p._id || i}>
                         <td><strong>{p.name || '-'}</strong></td>
                         <td>{p.sku || '-'}</td>
-                        <td>{p.category || '-'}</td>
+                        <td>{categoryName(p.category)}</td>
                         <td style={{ textAlign: 'right', fontWeight: 600, color: it.quantity <= 5 ? 'var(--danger)' : 'inherit' }}>
                           {it.quantity}
                         </td>
