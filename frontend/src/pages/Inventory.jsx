@@ -29,6 +29,7 @@ const Inventory = () => {
   const [categories, setCategories] = useState([]);
   const [categoryFilter, setCategoryFilter] = useState('');
   const [vendorFilter, setVendorFilter] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [sortDir, setSortDir] = useState(null); // null | 'asc' | 'desc' (by quantity)
   const [showOwnerSelectModal, setShowOwnerSelectModal] = useState(false);
   const [showEntryModal, setShowEntryModal] = useState(false);
@@ -333,6 +334,13 @@ const Inventory = () => {
   // Apply the category + vendor filters, then the quantity sort.
   const sortedInventory = (() => {
     let list = inventory;
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      list = list.filter((it) => {
+        const p = it.product || it.productId;
+        return (p?.name || '').toLowerCase().includes(q) || (p?.sku || '').toLowerCase().includes(q);
+      });
+    }
     if (categoryFilter) {
       list = list.filter((it) => (it.product || it.productId)?.category === categoryFilter);
     }
@@ -574,6 +582,17 @@ const Inventory = () => {
 
       <div className="card">
         <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.25rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 220 }}>
+            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--gray-500)' }}>Axtarış</label>
+            <input
+              type="text"
+              className="form-control"
+              placeholder="Məhsul adı və ya SKU..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 240 }}>
             <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--gray-500)' }}>Anbar / Mağaza</label>
             <WarehouseSelect
@@ -616,10 +635,10 @@ const Inventory = () => {
             </select>
           </div>
 
-          {(selectedWarehouse || categoryFilter || vendorFilter || sortDir) && (
+          {(searchQuery || selectedWarehouse || categoryFilter || vendorFilter || sortDir) && (
             <button
               className="btn btn-secondary"
-              onClick={() => { setSelectedWarehouse(''); setCategoryFilter(''); setVendorFilter(''); setSortDir(null); }}
+              onClick={() => { setSearchQuery(''); setSelectedWarehouse(''); setCategoryFilter(''); setVendorFilter(''); setSortDir(null); }}
             >
               Təmizlə
             </button>
