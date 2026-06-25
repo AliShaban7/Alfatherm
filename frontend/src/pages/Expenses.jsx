@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { FiPlus, FiEdit2, FiTrash2, FiFilter, FiUsers } from 'react-icons/fi';
-import { expenseAPI, branchAPI, ustaAPI } from '../services/api';
+import { expenseAPI, warehouseAPI, ustaAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { format } from 'date-fns';
 import { EXPENSE_CATEGORIES } from '../utils/labels';
@@ -50,13 +50,21 @@ const Expenses = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [expensesRes, branchesRes, balancesRes] = await Promise.all([
+      const [expensesRes, whRes, balancesRes] = await Promise.all([
         expenseAPI.getAll({ category: categoryFilter, branchId: branchFilter }),
-        branchAPI.getAll(),
+        warehouseAPI.getAll(),
         ustaAPI.getBalances().catch(() => ({ data: { data: [] } }))
       ]);
       setExpenses(expensesRes.data.expenses);
-      setBranches(branchesRes.data.data);
+      // Filial options mirror the Warehouses page (current names), instead of the
+      // Branch collection whose names drift when a warehouse is renamed/recoded.
+      // The stored value stays the warehouse's linked branchId — what an expense
+      // references — so reporting/grouping is unchanged.
+      setBranches(
+        (whRes.data.data || [])
+          .filter((w) => w.branchId)
+          .map((w) => ({ _id: w.branchId, name: w.name, code: w.code }))
+      );
       setUstaBalances(balancesRes.data.data || []);
     } catch (error) {
       toast.error('Məlumatları yükləmək mümkün olmadı');
