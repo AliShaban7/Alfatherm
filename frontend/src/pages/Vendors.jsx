@@ -121,11 +121,9 @@ const Vendors = () => {
           <h1 className="page-title">Vendorlar</h1>
           <p className="page-subtitle">Təchizatçılar</p>
         </div>
-        {isOwner() && (
-          <button className="btn btn-primary" onClick={() => { resetForm(); setShowModal(true); }}>
-            <FiPlus /> Yeni Vendor
-          </button>
-        )}
+        <button className="btn btn-primary" onClick={() => { resetForm(); setShowModal(true); }}>
+          <FiPlus /> Yeni Vendor
+        </button>
       </div>
 
       <div className="card">
@@ -163,7 +161,7 @@ const Vendors = () => {
                   <th>Telefon</th>
                   <th>Toplam Alış</th>
                   <th>Borc</th>
-                  {isOwner() && <th></th>}
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -177,18 +175,18 @@ const Vendors = () => {
                     <td style={{ color: vendor.totalDebt > 0 ? 'var(--danger)' : 'inherit' }}>
                       {formatCurrency(vendor.totalDebt || 0)}
                     </td>
-                    {isOwner() && (
-                      <td>
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          <button className="btn btn-sm btn-secondary" onClick={() => handleEdit(vendor)}>
-                            <FiEdit2 />
-                          </button>
+                    <td>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button className="btn btn-sm btn-secondary" onClick={() => handleEdit(vendor)}>
+                          <FiEdit2 />
+                        </button>
+                        {isOwner() && (
                           <button className="btn btn-sm" style={{ color: 'var(--danger)' }} onClick={() => handleDelete(vendor._id)}>
                             <FiTrash2 />
                           </button>
-                        </div>
-                      </td>
-                    )}
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>

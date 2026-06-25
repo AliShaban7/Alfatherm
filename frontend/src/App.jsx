@@ -66,7 +66,7 @@ function App() {
                   <Route path="/customers" element={<Customers />} />
                   <Route path="/inventory" element={<OwnerRoute><Inventory /></OwnerRoute>} />
                   <Route path="/debtors" element={<OwnerRoute><Debtors /></OwnerRoute>} />
-                  <Route path="/vendors" element={<OwnerRoute><Vendors /></OwnerRoute>} />
+                  <Route path="/vendors" element={<Vendors />} />
                   <Route path="/creditors" element={<OwnerRoute><Creditors /></OwnerRoute>} />
                   <Route path="/expenses" element={<OwnerRoute><Expenses /></OwnerRoute>} />
                   <Route path="/reports" element={<OwnerRoute><Reports /></OwnerRoute>} />

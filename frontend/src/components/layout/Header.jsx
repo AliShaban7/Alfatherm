@@ -111,6 +111,10 @@ const Header = () => {
                   <FiUsers className="nav-icon" />
                   <span className="nav-label">Müştərilər</span>
                 </NavLink>
+                <NavLink to="/vendors" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                  <FiTruck className="nav-icon" />
+                  <span className="nav-label">İstehsalçılar</span>
+                </NavLink>
               </>
             )}
             
@@ -320,6 +324,11 @@ const Header = () => {
           <NavLink to="/customers" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
             <FiUsers className="nav-icon" /><span>Müştərilər</span>
           </NavLink>
+          {employee && (
+            <NavLink to="/vendors" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
+              <FiTruck className="nav-icon" /><span>İstehsalçılar</span>
+            </NavLink>
+          )}
           {!employee && (
             <>
               <NavLink to="/inventory" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
