@@ -18,7 +18,7 @@ import './NewSale.css';
 
 const NewSale = () => {
   const navigate = useNavigate();
-  const { user, isOwner } = useAuth();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [products, setProducts] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -108,9 +108,9 @@ const NewSale = () => {
         warehouseAPI.getAll(),
         salespersonAPI.getAll(),
         ustaAPI.getAll(),
-        // Vendors are owner-only (employees get 403); only used for the manufacturer
-        // label, so salespeople skip it to avoid breaking the whole load.
-        isOwner() ? vendorAPI.getAll({ limit: 1000 }) : Promise.resolve({ data: { vendors: [] } })
+        // Vendors (İstehsalçı) are now accessible to sales accounts too; used for the
+        // manufacturer label. Keep a soft fallback so a failure doesn't break the load.
+        vendorAPI.getAll({ limit: 1000 }).catch(() => ({ data: { vendors: [] } }))
       ]);
       setProducts(productsRes.data.products);
       setCustomers(customersRes.data.customers);

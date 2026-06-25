@@ -1,19 +1,21 @@
 const express = require('express');
 const router = express.Router();
 const { vendorController } = require('../controllers');
-const { protect, ownerOnly, ownerDataIsolation, employeeRestricted } = require('../middleware/auth');
+const { protect, ownerOnly, ownerDataIsolation } = require('../middleware/auth');
 
 router.use(protect);
 router.use(ownerDataIsolation);
-router.use(employeeRestricted); // Block employees from accessing vendors
 
-router.post('/', ownerOnly, vendorController.create);
+// Sales accounts (salespeople) can view, add and edit vendors (İstehsalçı) — they
+// manage their store's local suppliers and assign them to products. Deleting a
+// vendor stays owner-only to avoid orphaning products that reference it.
+router.post('/', vendorController.create);
 
 router.get('/', vendorController.getAll);
 
 router.get('/:id', vendorController.getById);
 
-router.put('/:id', ownerOnly, vendorController.update);
+router.put('/:id', vendorController.update);
 
 router.delete('/:id', ownerOnly, vendorController.delete);
 
