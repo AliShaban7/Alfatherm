@@ -5,6 +5,8 @@ import { productAPI, warehouseAPI, inventoryAPI, categoryAPI } from '../services
 import ProductSearchSelect from '../components/ProductSearchSelect';
 import WarehouseSelect from '../components/WarehouseSelect';
 import { toast } from 'react-toastify';
+import { useAuth } from '../context/AuthContext';
+import { BUSINESS_OWNERS } from '../config/owners';
 
 // Fallback Azerbaijani names for the seeded category codes (used when the
 // categories collection hasn't loaded or lacks a code).
@@ -14,6 +16,10 @@ const CATEGORY_AZ = {
   bathroom: 'Hamam',
   general: 'Ümumi'
 };
+
+// Owner (Sahib) the imported goods are filed under — founders plus the store.
+const STORE_OWNER = { id: 'owner_admin_000', name: 'Mağaza' };
+const OWNER_OPTIONS = [...BUSINESS_OWNERS, STORE_OWNER];
 
 // Salesperson stocking screen: register goods bought locally (Mal Girişi, no
 // vendor) into the store, and see what's currently in stock. All scoped to the
@@ -27,15 +33,19 @@ const Stocking = () => {
   const [search, setSearch] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const [form, setForm] = useState({ productId: '', quantity: 1, costPrice: '' });
+  const { user } = useAuth();
+  const [form, setForm] = useState({
+    productId: '', quantity: 1, costPrice: '',
+    ownerId: user?.ownerId || STORE_OWNER.id
+  });
 
   // Load products + warehouses once; default the warehouse to the store.
   useEffect(() => {
     (async () => {
       try {
         const [pRes, wRes, cRes] = await Promise.all([
-          // Only products you can actually stock (your own / store namespace).
-          productAPI.getAll({ limit: 1000, ownOnly: 'true' }),
+          // All owners' products — the Sahib selector decides which subset to stock.
+          productAPI.getAll({ limit: 1000 }),
           warehouseAPI.getAll(),
           categoryAPI.getAll({ type: 'product' }).catch(() => ({ data: { data: [] } }))
         ]);
@@ -73,6 +83,7 @@ const Stocking = () => {
 
   const submit = async (e) => {
     e.preventDefault();
+    if (!form.ownerId) return toast.error('Sahib seçin');
     if (!form.productId) return toast.error('Məhsul seçin');
     if (!warehouseId) return toast.error('Anbar seçin');
     if (!form.quantity || form.quantity < 1) return toast.error('Miqdar ən azı 1 olmalıdır');
@@ -81,13 +92,14 @@ const Stocking = () => {
     try {
       await inventoryAPI.productEntry({
         productId: form.productId,
+        ownerId: form.ownerId,
         warehouseId,
         quantity: Number(form.quantity),
         costPrice: Number(form.costPrice),
         paymentStatus: 'paid'
       });
       toast.success('Mal girişi tamamlandı');
-      setForm({ productId: '', quantity: 1, costPrice: '' });
+      setForm({ productId: '', quantity: 1, costPrice: '', ownerId: form.ownerId });
       loadStock();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Xəta baş verdi');
@@ -159,9 +171,21 @@ const Stocking = () => {
           </div>
           <form onSubmit={submit}>
             <div className="form-group">
+              <label className="form-label">Sahib *</label>
+              <select
+                className="form-control"
+                value={form.ownerId}
+                onChange={(e) => setForm({ ...form, ownerId: e.target.value, productId: '' })}
+              >
+                {OWNER_OPTIONS.map((o) => (
+                  <option key={o.id} value={o.id}>{o.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group">
               <label className="form-label">Məhsul *</label>
               <ProductSearchSelect
-                products={products}
+                products={products.filter((p) => p.ownerId === form.ownerId)}
                 value={form.productId}
                 onChange={(id) => setForm({ ...form, productId: id })}
               />
