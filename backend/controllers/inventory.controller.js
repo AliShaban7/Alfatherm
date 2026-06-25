@@ -13,8 +13,12 @@ exports.importStock = async (req, res, next) => {
 
 exports.productEntry = async (req, res, next) => {
   try {
-    // Super owner can specify ownerId in body, otherwise use req.ownerId
-    const ownerId = req.user.role === ROLES.SUPER_OWNER && req.body.ownerId
+    // Super owner and sales accounts (who import goods on behalf of an owner) may
+    // pick the owner per entry; founders are pinned to their own. The service still
+    // requires the product to belong to the chosen owner, so this can't mis-file.
+    const canChooseOwner =
+      req.user.role === ROLES.SUPER_OWNER || req.user.role === ROLES.EMPLOYEE;
+    const ownerId = canChooseOwner && req.body.ownerId
       ? req.body.ownerId
       : req.ownerId;
     
