@@ -1,5 +1,5 @@
 const { body, param } = require('express-validator');
-const { PAYMENT_TYPES, PAYMENT_METHODS, SALE_EXPENSE_CATEGORIES } = require('../config/constants');
+const { PAYMENT_TYPES, PAYMENT_METHODS } = require('../config/constants');
 
 exports.createSaleValidation = [
   body('customerId')
@@ -57,8 +57,12 @@ exports.createSaleValidation = [
 
   // On-the-spot sale expenses (optional rows; each must be complete + non-zero).
   body('saleExpenses').optional().isArray().withMessage('Düzgün xərc siyahısı daxil edin'),
+  // Category is free text now (searchable + addable): require a non-empty,
+  // length-capped label instead of matching a fixed list.
   body('saleExpenses.*.category')
-    .isIn(SALE_EXPENSE_CATEGORIES).withMessage('Düzgün xərc kateqoriyası seçin'),
+    .trim()
+    .notEmpty().withMessage('Xərc kateqoriyası daxil edin')
+    .isLength({ max: 60 }).withMessage('Kateqoriya 60 simvoldan çox ola bilməz'),
   body('saleExpenses.*.amount')
     .isFloat({ gt: 0 }).withMessage('Xərc məbləği müsbət olmalıdır'),
 
