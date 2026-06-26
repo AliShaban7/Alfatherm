@@ -15,7 +15,7 @@ const ProductSearchSelect = ({ products, value, onChange, placeholder = 'Məhsul
     : [];
 
   return (
-    <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+    <div style={{ position: 'relative', flex: 1, minWidth: 0, zIndex: open ? 1000 : undefined }}>
       <input
         className="form-control"
         value={open ? query : (selected ? `${selected.name} (${selected.sku})` : '')}

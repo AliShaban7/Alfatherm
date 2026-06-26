@@ -969,7 +969,7 @@ const Inventory = () => {
                 </div>
 
                 <label className="form-label" style={{ marginTop: '0.5rem' }}>Məhsullar * ({transferForm.items.length})</label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: 320, overflowY: 'auto', paddingRight: 4 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', paddingRight: 4 }}>
                   {transferForm.items.map((it, i) => (
                     <div key={i} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                       <ProductSearchSelect
