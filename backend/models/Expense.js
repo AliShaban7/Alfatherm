@@ -46,7 +46,10 @@ const expenseSchema = new mongoose.Schema({
 
   category: {
     type: String,
-    enum: Object.values(EXPENSE_CATEGORIES),
+    // Free-text: predefined categories are suggested in the UI, but sale expenses
+    // (Satış xərcləri) may add new categories on the fly. Trimmed + length-capped.
+    trim: true,
+    maxlength: [60, 'Kateqoriya 60 simvoldan çox ola bilməz'],
     required: [true, 'Kateqoriya seçin']
   },
   
