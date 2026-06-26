@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { FiPlus, FiBox, FiSearch, FiPackage, FiLayers } from 'react-icons/fi';
+import { FiBox, FiSearch, FiPackage, FiLayers } from 'react-icons/fi';
 import { productAPI, warehouseAPI, inventoryAPI, categoryAPI } from '../services/api';
 import ProductSearchSelect from '../components/ProductSearchSelect';
 import WarehouseSelect from '../components/WarehouseSelect';
@@ -128,7 +128,6 @@ const Stocking = () => {
           <h1 className="page-title">Mal Girişi</h1>
           <p className="page-subtitle">Aldığınız malı sistemə əlavə edin və anbardakı qalığı görün</p>
         </div>
-        <Link to="/products" className="btn btn-secondary"><FiPlus /> Yeni Məhsul</Link>
       </div>
 
       {/* Warehouse picker — shared by the form and the stock list */}
