@@ -23,15 +23,17 @@ exports.createProductValidation = [
     .optional()
     .isFloat({ min: 0 }).withMessage('Maya dəyəri mənfi ola bilməz'),
   
+  // Selling prices are optional at creation (set later at Mal Girişi / stock);
+  // they default to 0 on the model.
   body('minPrice')
-    .notEmpty().withMessage('Minimum qiymət daxil edin')
+    .optional({ checkFalsy: true })
     .isFloat({ min: 0 }).withMessage('Minimum qiymət mənfi ola bilməz'),
-  
+
   body('recommendedPrice')
-    .notEmpty().withMessage('Tövsiyə olunan qiymət daxil edin')
+    .optional({ checkFalsy: true })
     .isFloat({ min: 0 }).withMessage('Tövsiyə olunan qiymət mənfi ola bilməz')
     .custom((value, { req }) => {
-      if (parseFloat(value) < parseFloat(req.body.minPrice)) {
+      if (req.body.minPrice && parseFloat(value) < parseFloat(req.body.minPrice)) {
         throw new Error('Tövsiyə olunan qiymət minimum qiymətdən az ola bilməz');
       }
       return true;
