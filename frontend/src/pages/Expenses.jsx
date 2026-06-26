@@ -3,7 +3,7 @@ import { FiPlus, FiEdit2, FiTrash2, FiFilter, FiUsers } from 'react-icons/fi';
 import { expenseAPI, warehouseAPI, ustaAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { format } from 'date-fns';
-import { EXPENSE_CATEGORIES } from '../utils/labels';
+import { EXPENSE_CATEGORIES, expenseCategoryLabel } from '../utils/labels';
 import { useAuth } from '../context/AuthContext';
 import { BUSINESS_OWNERS } from '../config/owners';
 
@@ -33,7 +33,7 @@ const Expenses = () => {
 
   const [formData, setFormData] = useState({
     branchId: '',
-    category: 'other',
+    category: '',
     description: '',
     amount: '',
     date: new Date().toISOString().split('T')[0],
@@ -77,6 +77,15 @@ const Expenses = () => {
     e.preventDefault();
     try {
       const submitData = { ...formData };
+
+      // Category is a searchable + addable input (shows labels). Map a typed/picked
+      // known label back to its code so reports group consistently; keep any new
+      // category as the trimmed free text.
+      const typedCat = String(submitData.category || '').trim();
+      const knownCat = EXPENSE_CATEGORIES.find(
+        (c) => c.label.toLowerCase() === typedCat.toLowerCase() || c.value === typedCat
+      );
+      submitData.category = knownCat ? knownCat.value : typedCat;
 
       // Auto-generate receipt number if empty
       if (!submitData.receiptNumber && !editingExpense) {
@@ -122,7 +131,7 @@ const Expenses = () => {
     setEditingExpense(expense);
     setFormData({
       branchId: expense.branchId?._id || '',
-      category: expense.category,
+      category: expenseCategoryLabel(expense.category),
       description: expense.description,
       amount: expense.amount,
       date: expense.date?.split('T')[0] || '',
@@ -223,7 +232,7 @@ const Expenses = () => {
     setEditingExpense(null);
     setFormData({
       branchId: '',
-      category: 'other',
+      category: '',
       description: '',
       amount: '',
       date: new Date().toISOString().split('T')[0],
@@ -464,16 +473,20 @@ const Expenses = () => {
                   </div>
                   <div className="form-group">
                     <label className="form-label">Kateqoriya *</label>
-                    <select
+                    <input
+                      type="text"
                       className="form-control"
+                      list="expense-cats"
+                      placeholder="Kateqoriya (yaz və ya seç)"
                       value={formData.category}
                       onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                       required
-                    >
+                    />
+                    <datalist id="expense-cats">
                       {EXPENSE_CATEGORIES.map(cat => (
-                        <option key={cat.value} value={cat.value}>{cat.label}</option>
+                        <option key={cat.value} value={cat.label} />
                       ))}
-                    </select>
+                    </datalist>
                   </div>
                 </div>
                 <div className="form-group">
