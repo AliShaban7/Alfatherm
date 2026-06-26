@@ -29,7 +29,9 @@ exports.registerValidation = [
     .notEmpty().withMessage('Owner ID tələb olunur'),
   
   body('branchId')
-    .optional()
+    // Only EMPLOYEE accounts carry a branch; others (owner/director/accountant)
+    // send an empty branchId, so treat falsy as absent instead of failing isMongoId.
+    .optional({ checkFalsy: true })
     .isMongoId().withMessage('Düzgün filial ID daxil edin')
 ];
 
