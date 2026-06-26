@@ -12,10 +12,23 @@ const api = axios.create({
 const cache = new Map();
 const CACHE_TTL = 30000; // 30 seconds
 
+// The accountant works on a selected founder's books; the chosen owner is sent
+// on every request so the backend scopes to it. null for everyone else.
+const getActingOwner = () => {
+  try {
+    const u = JSON.parse(localStorage.getItem('user') || 'null');
+    if (u?.role !== 'ACCOUNTANT') return null;
+    return localStorage.getItem('actingOwner') || 'owner_zaur_001';
+  } catch {
+    return null;
+  }
+};
+
 const getCacheKey = (config) => {
   const token = localStorage.getItem('token') || '';
   const sessionKey = token.slice(-20);
-  return `${sessionKey}:${config.method}:${config.url}:${JSON.stringify(config.params || {})}`;
+  // Include the acting owner so a switch doesn't serve the previous owner's cache.
+  return `${sessionKey}:${getActingOwner() || ''}:${config.method}:${config.url}:${JSON.stringify(config.params || {})}`;
 };
 
 const shouldSkipCache = (url = '') =>
@@ -29,7 +42,12 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
-    
+
+    const actingOwner = getActingOwner();
+    if (actingOwner) {
+      config.headers['x-acting-owner'] = actingOwner;
+    }
+
     if (config.method === 'get' && !shouldSkipCache(config.url)) {
       const cacheKey = getCacheKey(config);
       const cached = cache.get(cacheKey);

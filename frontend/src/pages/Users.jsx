@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 const ROLES = [
   { value: 'SUPER_OWNER', label: 'Direktor' },
   { value: 'OWNER',       label: 'Sahib' },
+  { value: 'ACCOUNTANT',  label: 'Mühasib' },
   { value: 'EMPLOYEE',    label: 'Satıcı' }
 ];
 
@@ -19,6 +20,7 @@ const OWNERS = [
 const ROLE_BADGE = {
   SUPER_OWNER: { label: 'Direktor', color: '#7c3aed' },
   OWNER:       { label: 'Sahib',    color: '#0369a1' },
+  ACCOUNTANT:  { label: 'Mühasib',  color: '#b45309' },
   EMPLOYEE:    { label: 'Satıcı',   color: '#047857' }
 };
 
@@ -141,9 +143,9 @@ const Users = () => {
 
   const ownerLabel = (id) => OWNERS.find((o) => o.id === id)?.name || id;
 
-  // Group: owners first, then employees
+  // Group: back-office (owners, director, accountants) first, then salespeople
   const grouped = {
-    owners: users.filter((u) => u.role === 'SUPER_OWNER' || u.role === 'OWNER'),
+    owners: users.filter((u) => u.role === 'SUPER_OWNER' || u.role === 'OWNER' || u.role === 'ACCOUNTANT'),
     employees: users.filter((u) => u.role === 'EMPLOYEE')
   };
 

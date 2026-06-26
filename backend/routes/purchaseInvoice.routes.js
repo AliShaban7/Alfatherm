@@ -3,7 +3,7 @@ const router = express.Router();
 const { purchaseInvoiceController } = require('../controllers');
 const { body } = require('express-validator');
 const {
-  protect, ownerOnly, ownerDataIsolation, employeeRestricted,
+  protect, ownerOnly, ownerOrAccountant, ownerDataIsolation, employeeRestricted,
   canAccessMainWarehouse
 } = require('../middleware/auth');
 const validateRequest = require('../middleware/validateRequest');
@@ -27,8 +27,8 @@ const createValidation = [
   body('note').optional().trim()
 ];
 
-router.post('/', ownerOnly, createValidation, validateRequest, purchaseInvoiceController.create);
-router.post('/import', ownerOnly, purchaseInvoiceController.importInvoices);
+router.post('/', ownerOrAccountant, createValidation, validateRequest, purchaseInvoiceController.create);
+router.post('/import', ownerOrAccountant, purchaseInvoiceController.importInvoices);
 router.get('/', purchaseInvoiceController.getAll);
 router.get('/:id', purchaseInvoiceController.getById);
 

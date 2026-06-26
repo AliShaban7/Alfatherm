@@ -32,7 +32,7 @@ const Sales = () => {
   const [pagination, setPagination] = useState({ page: 1, pages: 1 });
   const [detailSale, setDetailSale] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const { isOwner } = useAuth();
+  const { isOwner, isAccountant } = useAuth();
 
   const SALE_EXPENSE_LABELS = { delivery: 'Daşınma', installation: 'Quraşdırma', other: 'Digər', courier: 'Kuryer', packaging: 'Qablaşdırma' };
 
@@ -176,9 +176,11 @@ const Sales = () => {
         <div>
           <h1 className="page-title">Satışlar</h1>
         </div>
-        <Link to="/sales/new" className="btn btn-primary">
-          <FiPlus /> Yeni Satış
-        </Link>
+        {!isAccountant() && (
+          <Link to="/sales/new" className="btn btn-primary">
+            <FiPlus /> Yeni Satış
+          </Link>
+        )}
       </div>
 
       <div className="card">

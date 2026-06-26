@@ -59,6 +59,10 @@ export const AuthProvider = ({ children }) => {
     return user?.role === 'EMPLOYEE';
   };
 
+  const isAccountant = () => {
+    return user?.role === 'ACCOUNTANT';
+  };
+
   const getHomePath = () => (user?.role === 'EMPLOYEE' ? '/my-sales' : '/');
 
   const value = {
@@ -69,6 +73,7 @@ export const AuthProvider = ({ children }) => {
     isOwner,
     isSuperOwner,
     isEmployee,
+    isAccountant,
     getHomePath
   };
 
