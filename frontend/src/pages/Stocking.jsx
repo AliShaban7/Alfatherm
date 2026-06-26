@@ -16,10 +16,9 @@ const CATEGORY_AZ = {
   general: 'Ümumi'
 };
 
-// Owner (Sahib) the imported goods are filed under. Products belong to a founder
-// (Zaur / Ədalət) — there is no "Mağaza" owner; salespeople buy locally and stock
-// the goods under the founder who owns them.
-const OWNER_OPTIONS = BUSINESS_OWNERS;
+// Owner (Sahib) is derived from the selected product — products belong to a
+// founder (Zaur / Ədalət). Salespeople buy locally and stock under that founder.
+const ownerName = (id) => BUSINESS_OWNERS.find((o) => o.id === id)?.name || '— Məhsul seçin —';
 
 // Salesperson stocking screen: register goods bought locally (Mal Girişi, no
 // vendor) into the store, and see what's currently in stock. All scoped to the
@@ -35,7 +34,7 @@ const Stocking = () => {
 
   const [form, setForm] = useState({
     productId: '', quantity: 1, costPrice: '', minPrice: '', recommendedPrice: '',
-    ownerId: OWNER_OPTIONS[0].id
+    ownerId: '' // filled from the selected product
   });
 
   // Load products + warehouses once; default the warehouse to the store.
@@ -82,8 +81,8 @@ const Stocking = () => {
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!form.ownerId) return toast.error('Sahib seçin');
     if (!form.productId) return toast.error('Məhsul seçin');
+    if (!form.ownerId) return toast.error('Məhsulun sahibi tapılmadı');
     if (!warehouseId) return toast.error('Anbar seçin');
     if (!form.quantity || form.quantity < 1) return toast.error('Miqdar ən azı 1 olmalıdır');
     if (form.costPrice === '' || Number(form.costPrice) < 0) return toast.error('Maya (alış) qiymətini daxil edin');
@@ -103,7 +102,7 @@ const Stocking = () => {
         paymentStatus: 'paid'
       });
       toast.success('Mal girişi tamamlandı');
-      setForm({ productId: '', quantity: 1, costPrice: '', minPrice: '', recommendedPrice: '', ownerId: form.ownerId });
+      setForm({ productId: '', quantity: 1, costPrice: '', minPrice: '', recommendedPrice: '', ownerId: '' });
       loadStock();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Xəta baş verdi');
@@ -173,29 +172,19 @@ const Stocking = () => {
             <h3 style={{ margin: 0, fontWeight: 600 }}>Yeni mal girişi</h3>
           </div>
           <form onSubmit={submit}>
-            <div className="form-group">
-              <label className="form-label">Sahib *</label>
-              <select
-                className="form-control"
-                value={form.ownerId}
-                onChange={(e) => setForm({ ...form, ownerId: e.target.value, productId: '' })}
-              >
-                {OWNER_OPTIONS.map((o) => (
-                  <option key={o.id} value={o.id}>{o.name}</option>
-                ))}
-              </select>
-            </div>
+            {/* Product is the main entry: picking an existing product fetches its
+                owner (Sahib) and selling prices into the inputs. */}
             <div className="form-group">
               <label className="form-label">Məhsul *</label>
               <ProductSearchSelect
-                products={products.filter((p) => p.ownerId === form.ownerId)}
+                products={products}
                 value={form.productId}
                 onChange={(id) => {
-                  // Prefill the selling prices from the picked product (editable).
                   const p = products.find((pr) => pr._id === id);
                   setForm((f) => ({
                     ...f,
                     productId: id,
+                    ownerId: p?.ownerId ?? f.ownerId,
                     minPrice: p?.minPrice ?? '',
                     recommendedPrice: p?.recommendedPrice ?? ''
                   }));
@@ -204,6 +193,16 @@ const Stocking = () => {
               <div style={{ fontSize: '0.75rem', color: 'var(--gray-500)', marginTop: 4 }}>
                 Məhsul yoxdursa, <Link to="/products">Yeni Məhsul</Link> əlavə edin.
               </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Sahib</label>
+              <input
+                type="text"
+                className="form-control"
+                value={ownerName(form.ownerId)}
+                disabled
+                readOnly
+              />
             </div>
             <div style={{ display: 'flex', gap: '1rem' }}>
               <div className="form-group" style={{ flex: 1 }}>
