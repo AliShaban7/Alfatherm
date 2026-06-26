@@ -10,8 +10,10 @@ const Salesperson = require('../models/Salesperson');
 const { ROLES } = require('../config/constants');
 
 // A founder (OWNER) sees only the goods they own, even inside a sale that mixes
-// several owners' products. A SUPER_OWNER sees every owner's full figures.
-const isOwnerScoped = (user) => user?.role === ROLES.OWNER;
+// several owners' products. A SUPER_OWNER sees every owner's full figures. An
+// ACCOUNTANT is scoped to the founder they're currently viewing (acting owner set
+// on req.user.ownerId by protect), so treat them owner-scoped too.
+const isOwnerScoped = (user) => user?.role === ROLES.OWNER || user?.role === ROLES.ACCOUNTANT;
 
 // Inclusive end-of-day for a date-only filter. The report UI sends YYYY-MM-DD,
 // which parses to midnight; using it as `$lte` directly would exclude every sale

@@ -448,7 +448,8 @@ class SaleService {
   }
 
   async getAll(ownerFilter = {}, filters = {}, canSeeCostPrice = false, user = null) {
-    const isOwnerScoped = user?.role === ROLES.OWNER;
+    // Accountants view one founder's books at a time (acting owner), like an owner.
+    const isOwnerScoped = user?.role === ROLES.OWNER || user?.role === ROLES.ACCOUNTANT;
 
     // Build the $match. ObjectId fields must be cast explicitly for aggregation
     // (unlike find(), aggregate doesn't auto-cast string ids).
@@ -703,9 +704,9 @@ class SaleService {
       matchQuery.branchId = new mongoose.Types.ObjectId(branchId);
     }
 
-    // Owners are scoped to sales containing their goods and see only their slice;
+    // Owners (and accountants, scoped to their acting owner) see only their slice;
     // super owners see every owner's full figures.
-    const isOwnerScoped = user?.role === ROLES.OWNER;
+    const isOwnerScoped = user?.role === ROLES.OWNER || user?.role === ROLES.ACCOUNTANT;
     if (isOwnerScoped) {
       matchQuery.ownerIds = user.ownerId;
     }
