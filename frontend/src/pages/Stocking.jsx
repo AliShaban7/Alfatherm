@@ -5,7 +5,6 @@ import { productAPI, warehouseAPI, inventoryAPI, categoryAPI } from '../services
 import ProductSearchSelect from '../components/ProductSearchSelect';
 import WarehouseSelect from '../components/WarehouseSelect';
 import { toast } from 'react-toastify';
-import { useAuth } from '../context/AuthContext';
 import { BUSINESS_OWNERS } from '../config/owners';
 
 // Fallback Azerbaijani names for the seeded category codes (used when the
@@ -17,9 +16,10 @@ const CATEGORY_AZ = {
   general: 'Ümumi'
 };
 
-// Owner (Sahib) the imported goods are filed under — founders plus the store.
-const STORE_OWNER = { id: 'owner_admin_000', name: 'Mağaza' };
-const OWNER_OPTIONS = [...BUSINESS_OWNERS, STORE_OWNER];
+// Owner (Sahib) the imported goods are filed under. Products belong to a founder
+// (Zaur / Ədalət) — there is no "Mağaza" owner; salespeople buy locally and stock
+// the goods under the founder who owns them.
+const OWNER_OPTIONS = BUSINESS_OWNERS;
 
 // Salesperson stocking screen: register goods bought locally (Mal Girişi, no
 // vendor) into the store, and see what's currently in stock. All scoped to the
@@ -33,10 +33,9 @@ const Stocking = () => {
   const [search, setSearch] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const { user } = useAuth();
   const [form, setForm] = useState({
     productId: '', quantity: 1, costPrice: '', minPrice: '', recommendedPrice: '',
-    ownerId: user?.ownerId || STORE_OWNER.id
+    ownerId: OWNER_OPTIONS[0].id
   });
 
   // Load products + warehouses once; default the warehouse to the store.
