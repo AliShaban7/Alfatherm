@@ -42,10 +42,10 @@ const NewSale = () => {
   const [commission, setCommission] = useState({ ustaId: '', amount: '' });
   const [saleExpenses, setSaleExpenses] = useState([]); // [{ category, amount }]
 
-  const SALE_EXPENSE_OPTIONS = [
-    { value: 'delivery', label: 'Daşınma' },
-    { value: 'installation', label: 'Quraşdırma' },
-    { value: 'other', label: 'Digər' }
+  // Suggestions for the searchable category input — the user can pick one of these
+  // or type a brand-new category (free text).
+  const SALE_EXPENSE_SUGGESTIONS = [
+    'Daşınma', 'Quraşdırma', 'Kuryer', 'Qablaşdırma', 'Yükləmə', 'Usta', 'Digər'
   ];
 
   const [formData, setFormData] = useState({
@@ -212,7 +212,7 @@ const NewSale = () => {
   };
 
   const addExpenseRow = () =>
-    setSaleExpenses((rows) => [...rows, { category: 'delivery', amount: '' }]);
+    setSaleExpenses((rows) => [...rows, { category: '', amount: '' }]);
 
   const updateExpenseRow = (index, field, value) =>
     setSaleExpenses((rows) =>
@@ -336,9 +336,8 @@ const NewSale = () => {
 
     if (saleExpenses.length > 0) {
       payload.saleExpenses = saleExpenses.map((e) => ({
-        category: e.category,
-        amount: parseFloat(e.amount) || 0,
-        ...(e.note?.trim() ? { note: e.note.trim() } : {})
+        category: (e.category || '').trim(),
+        amount: parseFloat(e.amount) || 0
       }));
     }
 
@@ -871,28 +870,20 @@ const NewSale = () => {
 
             <div className="form-group">
               <label className="form-label">Satış xərcləri</label>
+              <datalist id="sale-expense-cats">
+                {SALE_EXPENSE_SUGGESTIONS.map((s) => <option key={s} value={s} />)}
+              </datalist>
               {saleExpenses.map((row, index) => (
                 <div key={index} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                  <select
+                  <input
+                    type="text"
                     className="form-control"
-                    style={{ flex: '2 1 120px' }}
+                    style={{ flex: '3 1 160px' }}
+                    list="sale-expense-cats"
+                    placeholder="Xərc kateqoriyası (yaz və ya seç)"
                     value={row.category}
                     onChange={(e) => updateExpenseRow(index, 'category', e.target.value)}
-                  >
-                    {SALE_EXPENSE_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
-                  {row.category === 'other' && (
-                    <input
-                      type="text"
-                      className="form-control"
-                      style={{ flex: '3 1 160px' }}
-                      placeholder="Xərc adı"
-                      value={row.note || ''}
-                      onChange={(e) => updateExpenseRow(index, 'note', e.target.value)}
-                    />
-                  )}
+                  />
                   <input
                     type="number"
                     className="form-control"

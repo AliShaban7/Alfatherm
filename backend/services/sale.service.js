@@ -138,12 +138,14 @@ class SaleService {
     }
 
     // Normalize the on-the-spot sale expenses (drop empty rows; reject bad ones).
+    // Category is free text now (searchable + addable), so just require a non-empty
+    // trimmed label rather than matching a fixed list.
     const normalizedExpenses = (Array.isArray(saleExpenses) ? saleExpenses : [])
-      .map((e) => ({ category: e.category, amount: Number(e.amount), note: e.note }))
+      .map((e) => ({ category: String(e.category || '').trim(), amount: Number(e.amount), note: e.note }))
       .filter((e) => e.amount > 0);
     for (const e of normalizedExpenses) {
-      if (!SALE_EXPENSE_CATEGORIES.includes(e.category)) {
-        throw new Error('Düzgün xərc kateqoriyası seçin');
+      if (!e.category) {
+        throw new Error('Xərc kateqoriyası daxil edin');
       }
     }
 
