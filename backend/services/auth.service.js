@@ -13,6 +13,9 @@ class AuthService {
     const allowed = ['name', 'phone', 'role', 'branchId', 'ownerId', 'isActive'];
     const update = {};
     allowed.forEach((k) => { if (data[k] !== undefined) update[k] = data[k]; });
+    // Only employees carry a branch; an empty branchId (owner/director/accountant)
+    // must become null, not '' — Mongoose can't cast '' to an ObjectId.
+    if (update.branchId === '' || update.branchId === null) update.branchId = null;
     const user = await User.findByIdAndUpdate(id, update, { new: true, runValidators: true })
       .populate('branchId', 'name code')
       .select('-password');
@@ -43,6 +46,10 @@ class AuthService {
     if (existingUser) {
       throw new Error('Bu email artıq istifadə olunub');
     }
+
+    // Non-employee roles send an empty branchId; drop it so Mongoose doesn't try
+    // to cast '' to an ObjectId (BSONError).
+    if (!userData.branchId) delete userData.branchId;
 
     const user = await User.create(userData);
 
