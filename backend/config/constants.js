@@ -3,7 +3,10 @@ module.exports = {
   ROLES: {
     SUPER_OWNER: 'SUPER_OWNER',
     OWNER: 'OWNER',
-    EMPLOYEE: 'EMPLOYEE'
+    EMPLOYEE: 'EMPLOYEE',
+    // Accountant (Mühasib): works on a selected founder's books (per-owner view,
+    // switchable). Sees that owner's finances and can record expenses/payments.
+    ACCOUNTANT: 'ACCOUNTANT'
   },
 
   // Business owner IDs (Zaur & Ədalət — each owns their own data)

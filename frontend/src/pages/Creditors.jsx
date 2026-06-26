@@ -27,7 +27,7 @@ const Creditors = () => {
   const [showModal, setShowModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedCreditor, setSelectedCreditor] = useState(null);
-  const { isOwner, isSuperOwner } = useAuth();
+  const { isOwner, isSuperOwner, isAccountant } = useAuth();
 
   const [formData, setFormData] = useState({
     vendorId: '',
@@ -234,7 +234,7 @@ const Creditors = () => {
             <FiDownload /> Excel
           </button>
           
-          {isOwner() && (
+          {(isOwner() || isAccountant()) && (
             <button className="btn btn-primary" onClick={handleOpenModal}>
               <FiPlus /> Yeni Borc
             </button>

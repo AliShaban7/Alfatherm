@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const { ROLES } = require('../config/constants');
+const { ROLES, OWNER_IDS } = require('../config/constants');
 
 exports.protect = async (req, res, next) => {
   let token;
@@ -38,6 +38,19 @@ exports.protect = async (req, res, next) => {
     req.ownerId = decoded.ownerId;
     req.userRole = decoded.role;
     req.branchId = decoded.branchId;
+
+    // An accountant has no books of their own — they work on a selected founder's
+    // (or the store's) data. The acting owner comes from the x-acting-owner header
+    // set by the UI's owner switcher; validate it against the known owners and
+    // default to Zaur. Downstream scoping (ownerDataIsolation, report/sale slicing)
+    // reads req.ownerId / req.user.ownerId, so set both.
+    if (req.user.role === ROLES.ACCOUNTANT) {
+      const allowed = Object.values(OWNER_IDS);
+      const acting = req.headers['x-acting-owner'];
+      const ownerId = allowed.includes(acting) ? acting : OWNER_IDS.ZAUR;
+      req.ownerId = ownerId;
+      req.user.ownerId = ownerId;
+    }
 
     next();
   } catch (err) {
@@ -103,7 +116,26 @@ exports.ownerSaleIsolation = (req, res, next) => {
 };
 
 exports.canSeeCostPrice = (req, res, next) => {
-  req.canSeeCostPrice = req.user.role === ROLES.OWNER || req.user.role === ROLES.SUPER_OWNER;
+  req.canSeeCostPrice =
+    req.user.role === ROLES.OWNER ||
+    req.user.role === ROLES.SUPER_OWNER ||
+    req.user.role === ROLES.ACCOUNTANT;
+  next();
+};
+
+// Owner-level finance endpoints the accountant also needs (P&L, branch report,
+// recording creditors/fakturalar). Allows owners, the director, and accountants.
+exports.ownerOrAccountant = (req, res, next) => {
+  const ok =
+    req.user.role === ROLES.OWNER ||
+    req.user.role === ROLES.SUPER_OWNER ||
+    req.user.role === ROLES.ACCOUNTANT;
+  if (!ok) {
+    return res.status(403).json({
+      success: false,
+      message: 'Bu əməliyyat üçün icazəniz yoxdur'
+    });
+  }
   next();
 };
 

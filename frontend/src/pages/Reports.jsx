@@ -34,7 +34,10 @@ const KpiCard = ({ icon: Icon, color, value, label }) => (
 );
 
 const Reports = () => {
-  const { isOwner } = useAuth();
+  const { isOwner, isAccountant } = useAuth();
+  // Accountants get the same financial visibility as owners (cost, profit, P&L),
+  // scoped to the founder they're currently viewing.
+  const canFin = isOwner() || isAccountant();
   const [activeTab, setActiveTab] = useState('sales');
   const [loading, setLoading] = useState(true);
   const [salesReport, setSalesReport] = useState(null);
@@ -78,7 +81,7 @@ const Reports = () => {
           setSalespersonReport((await reportAPI.getSalespersonReport(params)).data.data);
           break;
         case 'profit':
-          if (isOwner()) setProfitLossReport((await reportAPI.getProfitLossReport(params)).data.data);
+          if (canFin) setProfitLossReport((await reportAPI.getProfitLossReport(params)).data.data);
           break;
         default:
           break;
@@ -88,7 +91,7 @@ const Reports = () => {
     } finally {
       setLoading(false);
     }
-  }, [filters, activeTab, isOwner]);
+  }, [filters, activeTab, canFin]);
 
   useEffect(() => {
     fetchReport(filters, activeTab);
@@ -185,27 +188,27 @@ const Reports = () => {
         'POS (AZN)': r.posSales,
         'Bank (AZN)': r.bankSales,
         'Nisyə (AZN)': r.creditSales,
-        ...(isOwner() && { 'Qazanc (AZN)': r.totalProfit })
+        ...(canFin && { 'Qazanc (AZN)': r.totalProfit })
       })), 'satis_hesabati');
     } else if (activeTab === 'products') {
       if (!productReport?.length) return toast.warning('Eksport üçün məlumat yoxdur');
       exportToExcel(productReport.map((r, i) => ({
         '#': i + 1, 'Məhsul': r.productName, 'Miqdar': r.totalQuantity,
-        'Məbləğ (AZN)': r.totalAmount, ...(isOwner() && { 'Qazanc (AZN)': r.totalProfit })
+        'Məbləğ (AZN)': r.totalAmount, ...(canFin && { 'Qazanc (AZN)': r.totalProfit })
       })), 'mehsul_satis');
     } else if (activeTab === 'inventory') {
       if (!inventoryReport?.byWarehouse?.length) return toast.warning('Eksport üçün məlumat yoxdur');
       exportToExcel(inventoryReport.byWarehouse.map((r) => ({
         'Anbar': r.warehouseName, 'Tip': r.warehouseType === 'main' ? 'Əsas' : 'Filial',
         'Məhsul Sayı': r.totalProducts, 'Miqdar': r.totalQuantity,
-        ...(isOwner() && r.totalValue && { 'Maya (AZN)': r.totalValue }),
+        ...(canFin && r.totalValue && { 'Maya (AZN)': r.totalValue }),
         'Satış Dəyəri (AZN)': r.totalRetailValue
       })), 'anbar_hesabati');
     } else if (activeTab === 'salespersons') {
       if (!salespersonReport?.length) return toast.warning('Eksport üçün məlumat yoxdur');
       exportToExcel(salespersonReport.map((r, i) => ({
         '#': i + 1, 'Satıcı': r.salespersonName, 'Satış Sayı': r.salesCount,
-        'Məbləğ (AZN)': r.totalAmount, ...(isOwner() && { 'Qazanc (AZN)': r.totalProfit })
+        'Məbləğ (AZN)': r.totalAmount, ...(canFin && { 'Qazanc (AZN)': r.totalProfit })
       })), 'satici_hesabati');
     } else if (activeTab === 'profit' && profitLossReport) {
       exportToExcel([
@@ -231,8 +234,8 @@ const Reports = () => {
         <div className="kpi-grid">
           <KpiCard icon={FiHash} color="kpi-slate" value={formatNumber(t?.salesCount)} label="Toplam Satış" />
           <KpiCard icon={FiDollarSign} color="kpi-blue" value={formatCurrency(t?.totalAmount)} label="Toplam Dövriyyə" />
-          {isOwner() && <KpiCard icon={FiPackage} color="kpi-amber" value={formatCurrency(t?.totalCost)} label="Maya Dəyəri" />}
-          {isOwner() && <KpiCard icon={FiTrendingUp} color="kpi-green" value={formatCurrency(t?.totalProfit)} label="Xalis Qazanc" />}
+          {canFin && <KpiCard icon={FiPackage} color="kpi-amber" value={formatCurrency(t?.totalCost)} label="Maya Dəyəri" />}
+          {canFin && <KpiCard icon={FiTrendingUp} color="kpi-green" value={formatCurrency(t?.totalProfit)} label="Xalis Qazanc" />}
         </div>
 
         {rows.length > 0 ? (
@@ -247,7 +250,7 @@ const Reports = () => {
                   <th className="num">POS</th>
                   <th className="num">Bank</th>
                   <th className="num">Nisyə</th>
-                  {isOwner() && <th className="num">Qazanc</th>}
+                  {canFin && <th className="num">Qazanc</th>}
                   <th></th>
                 </tr>
               </thead>
@@ -267,7 +270,7 @@ const Reports = () => {
                       <td className="num">{formatCurrency(r.posSales)}</td>
                       <td className="num">{formatCurrency(r.bankSales)}</td>
                       <td className="num" style={{ color: 'var(--warning)' }}>{formatCurrency(r.creditSales)}</td>
-                      {isOwner() && <td className="num" style={{ color: 'var(--success)' }}>{formatCurrency(r.totalProfit)}</td>}
+                      {canFin && <td className="num" style={{ color: 'var(--success)' }}>{formatCurrency(r.totalProfit)}</td>}
                       <td>
                         {range && (
                           <span className="rep-drill-hint">Detallar <FiChevronRight /></span>
@@ -303,7 +306,7 @@ const Reports = () => {
                   <th style={{ width: '22%' }}>Satış həcmi</th>
                   <th className="num">Miqdar</th>
                   <th className="num">Məbləğ</th>
-                  {isOwner() && <th className="num">Qazanc</th>}
+                  {canFin && <th className="num">Qazanc</th>}
                 </tr>
               </thead>
               <tbody>
@@ -318,7 +321,7 @@ const Reports = () => {
                     </td>
                     <td className="num">{formatNumber(r.totalQuantity)}</td>
                     <td className="num"><strong>{formatCurrency(r.totalAmount)}</strong></td>
-                    {isOwner() && <td className="num" style={{ color: 'var(--success)' }}>{formatCurrency(r.totalProfit)}</td>}
+                    {canFin && <td className="num" style={{ color: 'var(--success)' }}>{formatCurrency(r.totalProfit)}</td>}
                   </tr>
                 ))}
               </tbody>
@@ -337,7 +340,7 @@ const Reports = () => {
         <div className="kpi-grid">
           <KpiCard icon={FiBox} color="kpi-slate" value={formatNumber(t?.totalProducts)} label="Məhsul Növü" />
           <KpiCard icon={FiPackage} color="kpi-blue" value={formatNumber(t?.totalQuantity)} label="Toplam Miqdar" />
-          {isOwner() && t?.totalValue != null && (
+          {canFin && t?.totalValue != null && (
             <KpiCard icon={FiDollarSign} color="kpi-amber" value={formatCurrency(t.totalValue)} label="Maya Dəyəri" />
           )}
           <KpiCard icon={FiTrendingUp} color="kpi-green" value={formatCurrency(t?.totalRetailValue)} label="Satış Dəyəri" />
@@ -353,7 +356,7 @@ const Reports = () => {
                   <th>Tip</th>
                   <th className="num">Məhsul Sayı</th>
                   <th className="num">Miqdar</th>
-                  {isOwner() && <th className="num">Maya Dəyəri</th>}
+                  {canFin && <th className="num">Maya Dəyəri</th>}
                   <th className="num">Satış Dəyəri</th>
                 </tr>
               </thead>
@@ -364,7 +367,7 @@ const Reports = () => {
                     <td><span className={`badge ${r.warehouseType === 'main' ? 'badge-info' : 'badge-secondary'}`}>{r.warehouseType === 'main' ? 'Əsas' : 'Filial'}</span></td>
                     <td className="num">{formatNumber(r.totalProducts)}</td>
                     <td className="num">{formatNumber(r.totalQuantity)}</td>
-                    {isOwner() && <td className="num">{r.totalValue != null ? formatCurrency(r.totalValue) : '—'}</td>}
+                    {canFin && <td className="num">{r.totalValue != null ? formatCurrency(r.totalValue) : '—'}</td>}
                     <td className="num">{formatCurrency(r.totalRetailValue)}</td>
                   </tr>
                 ))}
@@ -390,7 +393,7 @@ const Reports = () => {
           <KpiCard icon={FiUserCheck} color="kpi-purple" value={formatNumber(rows.length)} label="Aktiv Satıcı" />
           <KpiCard icon={FiHash} color="kpi-slate" value={formatNumber(totals.count)} label="Toplam Satış" />
           <KpiCard icon={FiDollarSign} color="kpi-blue" value={formatCurrency(totals.amount)} label="Toplam Dövriyyə" />
-          {isOwner() && <KpiCard icon={FiTrendingUp} color="kpi-green" value={formatCurrency(totals.profit)} label="Toplam Qazanc" />}
+          {canFin && <KpiCard icon={FiTrendingUp} color="kpi-green" value={formatCurrency(totals.profit)} label="Toplam Qazanc" />}
         </div>
 
         <h3 className="rep-section-title"><FiUserCheck /> Satıcılara görə Performans (Bonus)</h3>
@@ -404,7 +407,7 @@ const Reports = () => {
                   <th style={{ width: '22%' }}>Dövriyyə payı</th>
                   <th className="num">Satış sayı</th>
                   <th className="num">Dövriyyə</th>
-                  {isOwner() && <th className="num">Qazanc</th>}
+                  {canFin && <th className="num">Qazanc</th>}
                 </tr>
               </thead>
               <tbody>
@@ -419,7 +422,7 @@ const Reports = () => {
                     </td>
                     <td className="num">{formatNumber(r.salesCount)}</td>
                     <td className="num"><strong>{formatCurrency(r.totalAmount)}</strong></td>
-                    {isOwner() && <td className="num" style={{ color: 'var(--success)' }}>{formatCurrency(r.totalProfit)}</td>}
+                    {canFin && <td className="num" style={{ color: 'var(--success)' }}>{formatCurrency(r.totalProfit)}</td>}
                   </tr>
                 ))}
               </tbody>
@@ -514,7 +517,7 @@ const Reports = () => {
       <div className="card rep-toolbar" style={{ marginBottom: '1.25rem' }}>
         <div className="rep-toolbar-top">
           <div className="rep-tabs">
-            {TABS.filter((t) => !t.ownerOnly || isOwner()).map((t) => (
+            {TABS.filter((t) => !t.ownerOnly || canFin).map((t) => (
               <button key={t.key} className={`rep-tab ${activeTab === t.key ? 'active' : ''}`} onClick={() => setActiveTab(t.key)}>
                 <t.icon /> {t.label}
               </button>
@@ -572,7 +575,7 @@ const Reports = () => {
             {activeTab === 'products' && renderProducts()}
             {activeTab === 'inventory' && renderInventory()}
             {activeTab === 'salespersons' && renderSalespersons()}
-            {activeTab === 'profit' && isOwner() && renderProfit()}
+            {activeTab === 'profit' && canFin && renderProfit()}
           </>
         )}
       </div>
@@ -593,7 +596,7 @@ const Reports = () => {
                 <SummaryItem v={formatCurrency(daily.row.posSales)} l="POS" />
                 <SummaryItem v={formatCurrency(daily.row.bankSales)} l="Bank" />
                 <SummaryItem v={formatCurrency(daily.row.creditSales)} l="Nisyə" />
-                {isOwner() && <SummaryItem v={formatCurrency(daily.row.totalProfit)} l="Qazanc" />}
+                {canFin && <SummaryItem v={formatCurrency(daily.row.totalProfit)} l="Qazanc" />}
               </div>
 
               {daily.loading ? (
@@ -611,7 +614,7 @@ const Reports = () => {
                         <th>Satıcı</th>
                         <th>Ödəniş</th>
                         <th className="num">Məbləğ</th>
-                        {isOwner() && <th className="num">Qazanc</th>}
+                        {canFin && <th className="num">Qazanc</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -623,7 +626,7 @@ const Reports = () => {
                           <td>{s.salespersonName || '—'}</td>
                           <td><span className={`badge ${s.paymentType === 'credit' ? 'badge-warning' : 'badge-success'}`}>{formatPaymentLabel(s.paymentType, s.paymentMethod)}</span></td>
                           <td className="num"><strong>{formatCurrency(s.totalAmount)}</strong></td>
-                          {isOwner() && <td className="num" style={{ color: 'var(--success)' }}>{formatCurrency(s.profit)}</td>}
+                          {canFin && <td className="num" style={{ color: 'var(--success)' }}>{formatCurrency(s.profit)}</td>}
                         </tr>
                       ))}
                     </tbody>

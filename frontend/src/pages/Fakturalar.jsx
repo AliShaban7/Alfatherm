@@ -30,7 +30,7 @@ const STATUS = {
 };
 
 const Fakturalar = () => {
-  const { isOwner } = useAuth();
+  const { isOwner, isAccountant } = useAuth();
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pagination, setPagination] = useState({ page: 1, pages: 1 });
@@ -239,7 +239,7 @@ const Fakturalar = () => {
           <h1 className="page-title">Fakturalar</h1>
           <p className="page-subtitle">Mal girişi fakturaları və ödəniş statusu</p>
         </div>
-        {isOwner() && (
+        {(isOwner() || isAccountant()) && (
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             <button
               className="btn btn-secondary"

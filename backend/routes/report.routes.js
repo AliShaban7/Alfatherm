@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { reportController } = require('../controllers');
-const { protect, ownerOnly, canSeeCostPrice, ownerDataIsolation, employeeRestricted } = require('../middleware/auth');
+const { protect, ownerOrAccountant, canSeeCostPrice, ownerDataIsolation, employeeRestricted } = require('../middleware/auth');
 
 router.use(protect);
 router.use(ownerDataIsolation);
@@ -18,10 +18,10 @@ router.get('/products', reportController.getProductSalesReport);
 
 router.get('/inventory', reportController.getInventoryReport);
 
-router.get('/branches', ownerOnly, reportController.getBranchReport);
+router.get('/branches', ownerOrAccountant, reportController.getBranchReport);
 
 router.get('/salespersons', reportController.getSalespersonReport);
 
-router.get('/profit-loss', ownerOnly, reportController.getProfitLossReport);
+router.get('/profit-loss', ownerOrAccountant, reportController.getProfitLossReport);
 
 module.exports = router;

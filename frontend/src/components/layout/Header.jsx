@@ -24,7 +24,7 @@ import { useAuth } from '../../context/AuthContext';
 import './Header.css';
 
 const Header = () => {
-  const { user, logout, isEmployee, isSuperOwner } = useAuth();
+  const { user, logout, isEmployee, isSuperOwner, isAccountant } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -59,6 +59,8 @@ const Header = () => {
         return <span className="role-badge super-owner">Admin</span>;
       case 'OWNER':
         return <span className="role-badge owner">Təsisçi</span>;
+      case 'ACCOUNTANT':
+        return <span className="role-badge owner">Mühasib</span>;
       default:
         return <span className="role-badge employee">İşçi</span>;
     }
@@ -67,7 +69,19 @@ const Header = () => {
   const isParametrlerActive = ['/vendors', '/warehouses', '/categories', '/salesmen', '/ustalar', '/users'].includes(location.pathname);
   const isHesabatlarActive = ['/reports', '/debtors', '/creditors', '/fakturalar'].includes(location.pathname);
   const employee = isEmployee();
+  const accountant = isAccountant();
+  // "owner" = founders + director (the full back-office nav). Accountants get a
+  // tailored finance-only nav, so exclude them here.
+  const owner = !employee && !accountant;
   const homePath = employee ? '/my-sales' : '/';
+
+  const ACTING_OWNERS = [
+    { id: 'owner_zaur_001', name: 'Zaur Müəllim' },
+    { id: 'owner_adalat_002', name: 'Ədalət Müəllim' },
+    { id: 'owner_admin_000', name: 'Mağaza' }
+  ];
+  const actingOwner = localStorage.getItem('actingOwner') || 'owner_zaur_001';
+  const switchOwner = (id) => { localStorage.setItem('actingOwner', id); window.location.reload(); };
 
   return (
     <header className="header">
@@ -118,18 +132,38 @@ const Header = () => {
               </>
             )}
             
-            {!employee && (
+            {owner && (
               <NavLink to="/inventory" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
                 <FiPackage className="nav-icon" />
                 <span className="nav-label">Anbar</span>
               </NavLink>
             )}
-            
-            {!employee && (
+
+            {owner && (
               <NavLink to="/products" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
                 <FiBox className="nav-icon" />
                 <span className="nav-label">Məhsullar</span>
               </NavLink>
+            )}
+
+            {accountant && (
+              <>
+                <NavLink to="/vendors" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                  <FiTruck className="nav-icon" />
+                  <span className="nav-label">İstehsalçılar</span>
+                </NavLink>
+                <div className="nav-link" style={{ gap: '0.4rem', cursor: 'default' }} title="Sahib (hesabat üçün)">
+                  <FiUserCheck className="nav-icon" />
+                  <select
+                    className="form-control"
+                    style={{ width: 'auto', padding: '0.25rem 0.5rem', height: 'auto' }}
+                    value={actingOwner}
+                    onChange={(e) => switchOwner(e.target.value)}
+                  >
+                    {ACTING_OWNERS.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                  </select>
+                </div>
+              </>
             )}
             
             {!employee && (
@@ -188,7 +222,7 @@ const Header = () => {
               </div>
             )}
 
-            {!employee && (
+            {owner && (
               <div className="nav-dropdown" ref={parametrlerRef}>
                 <button
                   type="button"
@@ -329,7 +363,44 @@ const Header = () => {
               <FiTruck className="nav-icon" /><span>İstehsalçılar</span>
             </NavLink>
           )}
-          {!employee && (
+          {accountant && (
+            <>
+              <div className="mobile-nav-group">
+                <span className="mobile-nav-group-title">Sahib (hesabat üçün)</span>
+                {ACTING_OWNERS.map((o) => (
+                  <button
+                    key={o.id}
+                    className={`mobile-nav-link ${actingOwner === o.id ? 'active' : ''}`}
+                    onClick={() => switchOwner(o.id)}
+                  >
+                    <FiUserCheck className="nav-icon" /><span>{o.name}</span>
+                  </button>
+                ))}
+              </div>
+              <NavLink to="/expenses" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
+                <FiDollarSign className="nav-icon" /><span>Xərclər</span>
+              </NavLink>
+              <div className="mobile-nav-group">
+                <span className="mobile-nav-group-title">Hesabatlar</span>
+                <NavLink to="/reports" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
+                  <FiPieChart className="nav-icon" /><span>Hesabatlar</span>
+                </NavLink>
+                <NavLink to="/debtors" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
+                  <FiFileText className="nav-icon" /><span>Debitorlar</span>
+                </NavLink>
+                <NavLink to="/creditors" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
+                  <FiCreditCard className="nav-icon" /><span>Kreditorlar</span>
+                </NavLink>
+                <NavLink to="/fakturalar" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
+                  <FiFileText className="nav-icon" /><span>Fakturalar</span>
+                </NavLink>
+                <NavLink to="/vendors" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
+                  <FiTruck className="nav-icon" /><span>İstehsalçılar</span>
+                </NavLink>
+              </div>
+            </>
+          )}
+          {owner && (
             <>
               <NavLink to="/inventory" className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)}>
                 <FiPackage className="nav-icon" /><span>Anbar</span>

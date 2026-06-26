@@ -18,7 +18,8 @@ import './Dashboard.css';
 const Dashboard = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const { isOwner } = useAuth();
+  const { isOwner, isAccountant } = useAuth();
+  const canFin = isOwner() || isAccountant();
   
   const getDefaultDates = () => {
     const now = new Date();
@@ -88,9 +89,11 @@ const Dashboard = () => {
     <div className="dashboard">
       <div className="page-header">
         <h1 className="page-title">Əsas Səhifə</h1>
-        <Link to="/sales/new" className="btn btn-primary">
-          <FiPlus /> Yeni Satış
-        </Link>
+        {!isAccountant() && (
+          <Link to="/sales/new" className="btn btn-primary">
+            <FiPlus /> Yeni Satış
+          </Link>
+        )}
       </div>
 
       <div className="stats-grid">
@@ -114,7 +117,7 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {isOwner() && (
+        {canFin && (
           <div className="stat-card compact" style={{ background: '#2563eb', color: 'white' }}>
             <div className="stat-card-icon" style={{ background: 'rgba(255, 255, 255, 0.2)', color: 'white' }}>
               <FiTrendingUp />
@@ -196,7 +199,7 @@ const Dashboard = () => {
               <span className="month-stat-label">Məbləğ</span>
               <span className="month-stat-value">{periodLoading ? '...' : formatCurrency(periodStats.totalAmount)}</span>
             </div>
-            {isOwner() && (
+            {canFin && (
               <div className="month-stat">
                 <span className="month-stat-label">Qazanc</span>
                 <span className="month-stat-value highlight">{periodLoading ? '...' : formatCurrency(periodStats.totalProfit)}</span>
