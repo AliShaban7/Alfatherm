@@ -9,7 +9,7 @@ const { INVENTORY_TRANSACTION_TYPES, WAREHOUSE_TYPES, ROLES } = require('../conf
 
 class InventoryService {
   async productEntry(data, ownerId, userId, canAccessMainWarehouse) {
-    const { productId, warehouseId, quantity, costPrice, note, vendorId, paymentStatus, paidAmount, dueDate } = data;
+    const { productId, warehouseId, quantity, costPrice, note, vendorId, paymentStatus, paidAmount, dueDate, minPrice, recommendedPrice } = data;
 
     const warehouse = await Warehouse.findById(warehouseId);
     if (!warehouse) {
@@ -42,6 +42,22 @@ class InventoryService {
     session.startTransaction();
 
     try {
+      // Selling prices can be set/updated at stock-entry time (the salesperson
+      // sets them when registering goods). Validate min ≤ recommended, then persist
+      // on the product within the same transaction.
+      if (minPrice !== undefined && minPrice !== '' && minPrice !== null) {
+        product.minPrice = Number(minPrice);
+      }
+      if (recommendedPrice !== undefined && recommendedPrice !== '' && recommendedPrice !== null) {
+        product.recommendedPrice = Number(recommendedPrice);
+      }
+      if (product.recommendedPrice < product.minPrice) {
+        throw new Error('Tövsiyə qiymət minimum qiymətdən aşağı ola bilməz');
+      }
+      if (product.isModified('minPrice') || product.isModified('recommendedPrice')) {
+        await product.save({ session });
+      }
+
       let inventory = await Inventory.findOne({ productId, warehouseId, ownerId });
       const entryCostPrice = costPrice || product.costPrice || 0;
       const totalAmount = quantity * entryCostPrice;

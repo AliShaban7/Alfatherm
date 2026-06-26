@@ -35,7 +35,7 @@ const Stocking = () => {
 
   const { user } = useAuth();
   const [form, setForm] = useState({
-    productId: '', quantity: 1, costPrice: '',
+    productId: '', quantity: 1, costPrice: '', minPrice: '', recommendedPrice: '',
     ownerId: user?.ownerId || STORE_OWNER.id
   });
 
@@ -88,6 +88,9 @@ const Stocking = () => {
     if (!warehouseId) return toast.error('Anbar seçin');
     if (!form.quantity || form.quantity < 1) return toast.error('Miqdar ən azı 1 olmalıdır');
     if (form.costPrice === '' || Number(form.costPrice) < 0) return toast.error('Maya (alış) qiymətini daxil edin');
+    if (form.minPrice === '' || Number(form.minPrice) < 0) return toast.error('Min qiyməti daxil edin');
+    if (form.recommendedPrice === '' || Number(form.recommendedPrice) < 0) return toast.error('Tövsiyə qiymətini daxil edin');
+    if (Number(form.recommendedPrice) < Number(form.minPrice)) return toast.error('Tövsiyə qiymət minimum qiymətdən aşağı ola bilməz');
     setSaving(true);
     try {
       await inventoryAPI.productEntry({
@@ -96,10 +99,12 @@ const Stocking = () => {
         warehouseId,
         quantity: Number(form.quantity),
         costPrice: Number(form.costPrice),
+        minPrice: Number(form.minPrice),
+        recommendedPrice: Number(form.recommendedPrice),
         paymentStatus: 'paid'
       });
       toast.success('Mal girişi tamamlandı');
-      setForm({ productId: '', quantity: 1, costPrice: '', ownerId: form.ownerId });
+      setForm({ productId: '', quantity: 1, costPrice: '', minPrice: '', recommendedPrice: '', ownerId: form.ownerId });
       loadStock();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Xəta baş verdi');
@@ -186,7 +191,16 @@ const Stocking = () => {
               <ProductSearchSelect
                 products={products.filter((p) => p.ownerId === form.ownerId)}
                 value={form.productId}
-                onChange={(id) => setForm({ ...form, productId: id })}
+                onChange={(id) => {
+                  // Prefill the selling prices from the picked product (editable).
+                  const p = products.find((pr) => pr._id === id);
+                  setForm((f) => ({
+                    ...f,
+                    productId: id,
+                    minPrice: p?.minPrice ?? '',
+                    recommendedPrice: p?.recommendedPrice ?? ''
+                  }));
+                }}
               />
               <div style={{ fontSize: '0.75rem', color: 'var(--gray-500)', marginTop: 4 }}>
                 Məhsul yoxdursa, <Link to="/products">Yeni Məhsul</Link> əlavə edin.
@@ -202,6 +216,18 @@ const Stocking = () => {
                 <label className="form-label">Maya (alış) qiyməti *</label>
                 <input type="number" className="form-control" min="0" step="0.01" value={form.costPrice}
                   onChange={(e) => setForm({ ...form, costPrice: e.target.value })} placeholder="0.00" />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label">Min Qiymət *</label>
+                <input type="number" className="form-control" min="0" step="0.01" value={form.minPrice}
+                  onChange={(e) => setForm({ ...form, minPrice: e.target.value })} placeholder="0.00" />
+              </div>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label">Tövsiyə Qiymət *</label>
+                <input type="number" className="form-control" min="0" step="0.01" value={form.recommendedPrice}
+                  onChange={(e) => setForm({ ...form, recommendedPrice: e.target.value })} placeholder="0.00" />
               </div>
             </div>
 
