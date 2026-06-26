@@ -3,8 +3,11 @@ const { ROLES } = require('../config/constants');
 
 exports.create = async (req, res, next) => {
   try {
-    // Super owner can specify ownerId in body, otherwise use req.ownerId
-    const ownerId = req.user.role === ROLES.SUPER_OWNER && req.body.ownerId
+    // Director and salespeople pick the owning founder (products belong to a
+    // founder, never the store); a founder creates under themselves.
+    const canChooseOwner =
+      req.user.role === ROLES.SUPER_OWNER || req.user.role === ROLES.EMPLOYEE;
+    const ownerId = canChooseOwner && req.body.ownerId
       ? req.body.ownerId
       : req.ownerId;
     
