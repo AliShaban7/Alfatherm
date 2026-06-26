@@ -58,12 +58,13 @@ const productSchema = new mongoose.Schema({
   },
   minPrice: {
     type: Number,
-    required: [true, 'Minimum qiymət daxil edin'],
+    // Set later at Mal Girişi (/stock); products are created without selling prices.
+    default: 0,
     min: [0, 'Minimum qiymət mənfi ola bilməz']
   },
   recommendedPrice: {
     type: Number,
-    required: [true, 'Tövsiyə olunan qiymət daxil edin'],
+    default: 0,
     validate: {
       validator: function(value) {
         return value >= this.minPrice;

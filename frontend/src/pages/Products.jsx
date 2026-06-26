@@ -677,32 +677,36 @@ const Products = () => {
                     />
                   </div>
                 </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label">Min Qiymət *</label>
-                    <input
-                      type="number"
-                      className="form-control"
-                      value={formData.minPrice}
-                      onChange={(e) => setFormData({ ...formData, minPrice: e.target.value })}
-                      step="0.01"
-                      min="0"
-                      required
-                    />
+                {/* Selling prices are set at Mal Girişi (/stock). On creation they
+                    default to 0; keep them editable here only for existing products. */}
+                {editingProduct && (
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label className="form-label">Min Qiymət *</label>
+                      <input
+                        type="number"
+                        className="form-control"
+                        value={formData.minPrice}
+                        onChange={(e) => setFormData({ ...formData, minPrice: e.target.value })}
+                        step="0.01"
+                        min="0"
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Tövsiyə Qiymət *</label>
+                      <input
+                        type="number"
+                        className="form-control"
+                        value={formData.recommendedPrice}
+                        onChange={(e) => setFormData({ ...formData, recommendedPrice: e.target.value })}
+                        step="0.01"
+                        min="0"
+                        required
+                      />
+                    </div>
                   </div>
-                  <div className="form-group">
-                    <label className="form-label">Tövsiyə Qiymət *</label>
-                    <input
-                      type="number"
-                      className="form-control"
-                      value={formData.recommendedPrice}
-                      onChange={(e) => setFormData({ ...formData, recommendedPrice: e.target.value })}
-                      step="0.01"
-                      min="0"
-                      required
-                    />
-                  </div>
-                </div>
+                )}
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>
