@@ -52,7 +52,11 @@ const Products = () => {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const fileInputRef = useRef(null);
-  const { isOwner, isSuperOwner, user } = useAuth();
+  const { isOwner, isSuperOwner, isEmployee, user } = useAuth();
+  // Who must pick the owning founder when creating a product: the director and
+  // salespeople (a founder creates under themselves). Keeps products under a
+  // founder (Zaur/Ədalət), never the store.
+  const canChooseOwner = isSuperOwner() || isEmployee();
 
   const [formData, setFormData] = useState({
     name: '',
@@ -65,7 +69,7 @@ const Products = () => {
     minPrice: '',
     recommendedPrice: '',
     description: '',
-    ownerId: user?.ownerId || ''
+    ownerId: '' // a founder is chosen on create (canChooseOwner); owners use their own
   });
 
   // Only the product list depends on filters.
@@ -192,7 +196,7 @@ const Products = () => {
       minPrice: '',
       recommendedPrice: '',
       description: '',
-      ownerId: user?.ownerId || ''
+      ownerId: '' // a founder is chosen on create (canChooseOwner); owners use their own
     });
   };
 
@@ -587,7 +591,7 @@ const Products = () => {
                     />
                   </div>
                 </div>
-                {isSuperOwner() && !editingProduct && (
+                {canChooseOwner && !editingProduct && (
                   <div className="form-row">
                     <div className="form-group">
                       <label className="form-label">Sahibi *</label>
