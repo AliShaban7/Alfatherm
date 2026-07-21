@@ -1,0 +1,59 @@
+# /etc/nginx/sites-available/alfatherm.az
+#
+# DİQQƏT: Bu fayl BOOTSTRAP versiyadır — yalnız port 80.
+# SSL blokunu (listen 443, ssl_certificate, HTTP→HTTPS redirect) certbot ÖZÜ əlavə edir:
+#
+#   sudo cp deploy/nginx/alfatherm.az /etc/nginx/sites-available/
+#   sudo ln -sfn /etc/nginx/sites-available/alfatherm.az /etc/nginx/sites-enabled/
+#   sudo nginx -t && sudo systemctl reload nginx
+#   sudo certbot --nginx -d alfatherm.az -d www.alfatherm.az
+#
+# Sertifikat mövcud olmadan "listen 443 ssl" yazsan, nginx -t fail olur və certbot işləmir.
+# Certbot işlədikdən sonra serverdəki fayl bu fayldan fərqlənəcək (SSL blokları əlavə olunur) — normaldır.
+
+server {
+    listen 80;
+    server_name alfatherm.az www.alfatherm.az;
+
+    # Upload limit artır (backend express.json limiti 10mb-dır)
+    client_max_body_size 100M;
+
+    location / {
+        root /var/www/alfatherm.az/frontend/dist;
+        try_files $uri $uri/ /index.html;
+
+        # Cache static assets
+        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+            expires 1y;
+            add_header Cache-Control "public, immutable";
+        }
+    }
+
+    # API (Node.js backend on port 3030)
+    location /api {
+        proxy_pass http://localhost:3030/api;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Timeout settings
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    # Security headers
+    # (HSTS-i certbot-dan sonra əlavə et — HTTP-only mərhələdə mənasızdır)
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+
+    # Logs
+    access_log /var/log/nginx/alfatherm.az.access.log;
+    error_log  /var/log/nginx/alfatherm.az.error.log;
+}

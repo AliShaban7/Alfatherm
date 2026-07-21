@@ -1,0 +1,143 @@
+name: Deploy AlfaTherm Frontend
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/deploy-frontend.yml'
+  workflow_dispatch:
+
+# Eyni vaxtda yalnız 1 deploy qaçsın
+concurrency:
+  group: deploy-alfatherm-frontend
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SECRET_KEY }}
+          port: 2222
+          command_timeout: 8m
+          script: |
+            #!/bin/bash
+            set -euo pipefail
+
+            # ========================================
+            # 1. NVM mühitini yüklə
+            # ========================================
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" || {
+              echo "❌ nvm.sh tapılmadı: $NVM_DIR/nvm.sh"
+              exit 1
+            }
+
+            # ========================================
+            # 2. Node 20 versiyasını aktiv et
+            # ========================================
+            echo "🔄 Node 20 aktivləşdirilir..."
+            nvm use 20 || {
+              echo "⚠️ Node 20 tapılmadı, default Node istifadə olunur"
+              nvm use default
+            }
+
+            # ========================================
+            # 3. pnpm PATH-ını əlavə et
+            # ========================================
+            export PNPM_HOME="$HOME/.local/share/pnpm"
+            export PATH="$PNPM_HOME:$PATH"
+
+            # ========================================
+            # 4. Versiyaları yoxla
+            # ========================================
+            echo "🔎 Quraşdırılmış versiyalar:"
+            node -v || { echo "❌ node tapılmadı"; exit 1; }
+            pnpm -v || { echo "❌ pnpm tapılmadı"; exit 1; }
+
+            # ========================================
+            # 5. Proyekt qovluğuna keç
+            # ========================================
+            REPO_DIR="/var/www/alfatherm.az"
+            CWD="$REPO_DIR/frontend"
+            DIST_DIR="$CWD/dist"
+            BACKUP_DIR="$CWD/dist_backup"
+            export NODE_ENV=production
+
+            echo "➡️ Repo qovluğuna keçilir: $REPO_DIR"
+            cd "$REPO_DIR" || { echo "❌ Qovluq tapılmadı: $REPO_DIR"; exit 1; }
+
+            # ========================================
+            # 6. Köhnə build-in backup-ını götür
+            # ========================================
+            if [ -d "$DIST_DIR" ]; then
+              echo "💾 Köhnə build backup edilir..."
+              rm -rf "$BACKUP_DIR"
+              cp -r "$DIST_DIR" "$BACKUP_DIR"
+            fi
+
+            # ========================================
+            # 7. Git repository-ni yenilə
+            # ========================================
+            echo "📥 Repository yenilənir..."
+            PREV_COMMIT=$(git rev-parse --short HEAD)
+            git fetch origin main --prune
+
+            if ! git merge --ff-only origin/main; then
+              echo "⚠️ Fast-forward merge mümkün olmadı, hard reset edilir..."
+              git reset --hard origin/main
+            fi
+
+            NEW_COMMIT=$(git rev-parse --short HEAD)
+            echo "✅ Repository yeniləndi: $PREV_COMMIT → $NEW_COMMIT"
+
+            # ========================================
+            # 8. Dependencies quraşdır
+            # ========================================
+            cd "$CWD" || { echo "❌ Qovluq tapılmadı: $CWD"; exit 1; }
+
+            echo "📦 Dependencies quraşdırılır..."
+            pnpm install --frozen-lockfile --prefer-offline
+
+            # ========================================
+            # 9. Build et (uğursuz olarsa rollback)
+            # ========================================
+            echo "🔨 Build edilir..."
+            if ! pnpm run build; then
+              echo "❌ Build uğursuz oldu! Rollback edilir..."
+              if [ -d "$BACKUP_DIR" ]; then
+                rm -rf "$DIST_DIR"
+                mv "$BACKUP_DIR" "$DIST_DIR"
+                echo "♻️ Köhnə build bərpa olundu"
+              fi
+              exit 1
+            fi
+
+            # index.html yoxdursa build boşdur — rollback
+            if [ ! -f "$DIST_DIR/index.html" ]; then
+              echo "❌ dist/index.html tapılmadı! Rollback edilir..."
+              if [ -d "$BACKUP_DIR" ]; then
+                rm -rf "$DIST_DIR"
+                mv "$BACKUP_DIR" "$DIST_DIR"
+                echo "♻️ Köhnə build bərpa olundu"
+              fi
+              exit 1
+            fi
+
+            # Backup-ı təmizlə
+            rm -rf "$BACKUP_DIR"
+
+            # ========================================
+            # 10. Uğurlu nəticə
+            # ========================================
+            echo ""
+            echo "✅ Deploy uğurla tamamlandı!"
+            echo "📊 Versiya: $PREV_COMMIT → $NEW_COMMIT"
+            echo "🕒 Tarix: $(date '+%Y-%m-%d %H:%M:%S')"

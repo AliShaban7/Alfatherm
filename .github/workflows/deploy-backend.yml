@@ -1,0 +1,158 @@
+name: Deploy AlfaTherm Backend
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy-backend.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-alfatherm-backend
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SECRET_KEY }}
+          port: 2222
+          command_timeout: 8m
+          script: |
+            #!/bin/bash
+            set -euo pipefail
+
+            # ========================================
+            # 1. NVM mühitini yüklə
+            # ========================================
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" || {
+              echo "❌ nvm.sh tapılmadı: $NVM_DIR/nvm.sh"
+              exit 1
+            }
+
+            # ========================================
+            # 2. Node 20 versiyasını aktiv et
+            # ========================================
+            echo "🔄 Node 20 aktivləşdirilir..."
+            nvm use 20 || {
+              echo "⚠️ Node 20 tapılmadı, default Node istifadə olunur"
+              nvm use default
+            }
+
+            # ========================================
+            # 3. pnpm və PM2 PATH-ını əlavə et
+            # ========================================
+            export PNPM_HOME="$HOME/.local/share/pnpm"
+            export PATH="$PNPM_HOME:$PATH"
+
+            # ========================================
+            # 4. Versiyaları yoxla
+            # ========================================
+            echo "🔎 Quraşdırılmış versiyalar:"
+            node -v || { echo "❌ node tapılmadı"; exit 1; }
+            pnpm -v || { echo "❌ pnpm tapılmadı"; exit 1; }
+            pm2 -v || { echo "❌ pm2 tapılmadı"; exit 1; }
+
+            # ========================================
+            # 5. Proyekt konfiqurasiyası
+            # ========================================
+            APP_NAME="alfatherm"
+            REPO_DIR="/var/www/alfatherm.az"
+            CWD="$REPO_DIR/backend"
+            ENTRY="server.js"
+            export NODE_ENV=production
+
+            echo "➡️ Repo qovluğuna keçilir: $REPO_DIR"
+            cd "$REPO_DIR" || { echo "❌ Qovluq tapılmadı: $REPO_DIR"; exit 1; }
+
+            # ========================================
+            # 6. Git repository-ni yenilə
+            # ========================================
+            echo "📥 Repository yenilənir..."
+            PREV_COMMIT=$(git rev-parse --short HEAD)
+            git fetch origin main --prune
+
+            if ! git merge --ff-only origin/main; then
+              echo "⚠️ Fast-forward merge mümkün olmadı, hard reset edilir..."
+              git reset --hard origin/main
+            fi
+
+            NEW_COMMIT=$(git rev-parse --short HEAD)
+            echo "✅ Repository yeniləndi: $PREV_COMMIT → $NEW_COMMIT"
+
+            # ========================================
+            # 7. .env faylını yoxla
+            # ========================================
+            cd "$CWD" || { echo "❌ Qovluq tapılmadı: $CWD"; exit 1; }
+
+            if [ ! -f "$CWD/.env" ]; then
+              echo "❌ .env tapılmadı: $CWD/.env"
+              echo "   JWT_SECRET və MONGODB_URI olmadan server start olmayacaq."
+              exit 1
+            fi
+
+            # ========================================
+            # 8. Dependencies quraşdır
+            # ========================================
+            echo "📦 Dependencies quraşdırılır..."
+            pnpm install --frozen-lockfile --prefer-offline --prod
+
+            # ========================================
+            # 9. PM2 ilə başlat/yenidən başlat
+            # ========================================
+            echo "🚀 PM2 ilə aplikasiya başladılır..."
+
+            if pm2 describe "$APP_NAME" >/dev/null 2>&1; then
+              echo "🔄 Mövcud aplikasiya yenidən başladılır..."
+              pm2 restart "$APP_NAME" --update-env
+            else
+              echo "🆕 Yeni aplikasiya başladılır..."
+              pm2 start "$ENTRY" \
+                --name "$APP_NAME" \
+                --time \
+                --update-env \
+                --cwd "$CWD" \
+                --node-args="--max-old-space-size=512"
+            fi
+
+            pm2 save --force
+
+            # ========================================
+            # 10. Health check
+            # ========================================
+            echo "🏥 Health check edilir..."
+            sleep 3
+            if pm2 describe "$APP_NAME" | grep -q "online"; then
+              echo "✅ PM2 prosesi online!"
+            else
+              echo "❌ Aplikasiya başlaya bilmədi!"
+              pm2 logs "$APP_NAME" --lines 20 --nostream || true
+              exit 1
+            fi
+
+            # API həqiqətən cavab verirmi?
+            if curl -fsS --max-time 10 http://127.0.0.1:3030/api/health >/dev/null; then
+              echo "✅ /api/health cavab verir!"
+            else
+              echo "❌ /api/health cavab vermir!"
+              pm2 logs "$APP_NAME" --lines 30 --nostream || true
+              exit 1
+            fi
+
+            # ========================================
+            # 11. Uğurlu nəticə
+            # ========================================
+            echo ""
+            echo "✅ Deploy uğurla tamamlandı!"
+            echo "📦 Aplikasiya: $APP_NAME (port 3030)"
+            echo "📊 Versiya: $PREV_COMMIT → $NEW_COMMIT"
+            echo "🕒 Tarix: $(date '+%Y-%m-%d %H:%M:%S')"
