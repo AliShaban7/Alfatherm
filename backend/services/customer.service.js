@@ -1,6 +1,7 @@
 const Customer = require('../models/Customer');
 const { ROLES } = require('../config/constants');
 const { prepareCustomerIdentityFields } = require('../utils/customerIdentity');
+const { exactCI } = require('../utils/textMatch');
 
 class CustomerService {
   async assertUniqueIdentityFields(fields, excludeCustomerId = null) {
@@ -29,12 +30,28 @@ class CustomerService {
         throw new Error('Bu FIN artıq sistemdə mövcuddur');
       }
     }
+
+    // Name is checked LAST: phone/voen/fin are hard identity (backed by the
+    // partial unique indexes on the model), so when the same person is being
+    // re-added those messages are the actionable ones. Customers are a shared
+    // pool, so the name is unique store-wide, case-insensitively, among active
+    // customers only. `name` is undefined on a partial update — nothing to check.
+    if (fields.name) {
+      const existing = await Customer.findOne({
+        ...baseQuery,
+        name: exactCI(fields.name)
+      }).lean();
+      if (existing) {
+        throw new Error(`Bu adda müştəri artıq mövcuddur (${existing.phone})`);
+      }
+    }
   }
 
   async create(customerData, ownerId, userId) {
     const prepared = prepareCustomerIdentityFields(customerData);
 
     await this.assertUniqueIdentityFields({
+      name: prepared.name,
       phone: prepared.phone,
       voen: prepared.voen,
       fin: prepared.fin
@@ -109,8 +126,18 @@ class CustomerService {
   async update(id, updateData, ownerId) {
     const prepared = prepareCustomerIdentityFields(updateData);
 
+    // The name rule is newer than the data: two customers may already share a
+    // name. Only check it when it actually changes, so an unrelated edit (phone,
+    // address) on such a record isn't permanently blocked. phone/voen/fin are
+    // backed by real unique indexes, so they are always checked.
+    const current = await Customer.findById(id).lean();
+    const nameChanged =
+      prepared.name !== undefined &&
+      String(prepared.name || '').trim() !== String(current?.name || '').trim();
+
     await this.assertUniqueIdentityFields(
       {
+        name: nameChanged ? prepared.name : undefined,
         phone: prepared.phone,
         voen: prepared.voen,
         fin: prepared.fin

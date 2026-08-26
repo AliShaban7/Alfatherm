@@ -42,6 +42,12 @@ class PurchaseInvoiceService {
     const products = await Product.find({ _id: { $in: productIds }, ownerId }).lean();
     const productMap = new Map(products.map((p) => [p._id.toString(), p]));
 
+    // Selling-price maintenance: a faktura line may also set the product's
+    // minimum sale price (mirrors inventory.service.productEntry). Only lines
+    // that actually change it are collected, so a 30-line invoice doesn't do 30
+    // pointless writes inside the transaction.
+    const priceUpdates = [];
+
     const lineItems = items.map((item) => {
       const product = productMap.get(String(item.productId));
       if (!product) {
@@ -54,6 +60,16 @@ class PurchaseInvoiceService {
       }
       if (!Number.isFinite(costPrice) || costPrice < 0) {
         throw new Error(`"${product.name}" üçün düzgün maya dəyəri daxil edin`);
+      }
+      const rawMin = item.minPrice;
+      if (rawMin !== undefined && rawMin !== null && rawMin !== '') {
+        const minPrice = Number(rawMin);
+        if (!Number.isFinite(minPrice) || minPrice < 0) {
+          throw new Error(`"${product.name}" üçün düzgün min satış qiyməti daxil edin`);
+        }
+        if (Number(product.minPrice || 0) !== minPrice) {
+          priceUpdates.push({ productId: product._id, minPrice });
+        }
       }
       return {
         productId: product._id,
@@ -97,6 +113,22 @@ class PurchaseInvoiceService {
         createdBy: userId
       }], { session });
       const invoice = created[0];
+
+      // Persist the min sale price entered on the faktura onto the product, in
+      // the same transaction. Product.recommendedPrice carries a `>= minPrice`
+      // validator and defaults to 0, so lift it to the new minimum instead of
+      // letting save() throw and abort the whole invoice.
+      for (const upd of priceUpdates) {
+        const product = await Product.findOne({ _id: upd.productId, ownerId }).session(session);
+        if (!product) continue;
+        product.minPrice = upd.minPrice;
+        if ((product.recommendedPrice || 0) < product.minPrice) {
+          product.recommendedPrice = product.minPrice;
+        }
+        if (product.isModified('minPrice') || product.isModified('recommendedPrice')) {
+          await product.save({ session });
+        }
+      }
 
       // Update stock (weighted-average cost) + log an IN movement per line.
       for (const line of lineItems) {

@@ -40,6 +40,12 @@ exports.createProductValidation = [
     }),
 
   body('brand').optional().trim(),
+  // vendorId is part of the (owner, name, vendor) uniqueness key, so it reaches a
+  // query filter — an uncastable value would surface as a misleading 404.
+  // checkFalsy so '' / null ("no vendor") are skipped rather than rejected.
+  body('vendorId')
+    .optional({ checkFalsy: true })
+    .isMongoId().withMessage('Düzgün İstehsalçı seçin'),
   body('manufacturer').optional().trim(),
   body('country').optional().trim(),
   body('color').optional().trim(),
@@ -51,7 +57,13 @@ exports.updateProductValidation = [
   param('id').isMongoId().withMessage('Düzgün məhsul ID daxil edin'),
   
   body('name').optional().trim().notEmpty().withMessage('Məhsul adı boş ola bilməz'),
-  
+
+  // See createProductValidation: part of the uniqueness key, so it must be a
+  // valid id when present; '' / null mean "no İstehsalçı" and are allowed.
+  body('vendorId')
+    .optional({ checkFalsy: true })
+    .isMongoId().withMessage('Düzgün İstehsalçı seçin'),
+
   body('category')
     .optional()
     .trim(),

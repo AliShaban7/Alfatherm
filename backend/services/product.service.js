@@ -32,10 +32,12 @@ const trimDescriptiveFields = (data) => {
 };
 
 class ProductService {
-  // Block creating a second product with the same name for an owner (case-
-  // insensitive), so a typo/duplicate can't fragment stats. `excludeId` skips
-  // the product itself on update.
-  async assertUniqueName(name, ownerId, excludeId = null) {
+  // The uniqueness key is (ownerId, name, vendorId): the same name may repeat as
+  // long as it belongs to a DIFFERENT İstehsalçı (vendor). Same name + same
+  // vendor stays blocked, and so does same name with NO vendor on both sides —
+  // those two rows are indistinguishable in every product picker.
+  // `excludeId` skips the product itself on update.
+  async assertUniqueName(name, ownerId, vendorId = null, excludeId = null) {
     const trimmed = String(name || '').trim();
     if (!trimmed) {
       throw new Error('Məhsul adı daxil edin');
@@ -43,11 +45,16 @@ class ProductService {
     const query = {
       ownerId,
       isActive: true,
-      name: { $regex: `^${escapeRegex(trimmed)}$`, $options: 'i' }
+      name: { $regex: `^${escapeRegex(trimmed)}$`, $options: 'i' },
+      // null matches both an explicit null and a missing field (products with no
+      // İstehsalçı). Never pass '' — Mongoose throws a CastError on ''→ObjectId.
+      vendorId: vendorId || null
     };
     if (excludeId) query._id = { $ne: excludeId };
     if (await Product.findOne(query)) {
-      throw new Error('Bu adda məhsul artıq mövcuddur');
+      throw new Error(vendorId
+        ? 'Bu istehsalçıda bu adda məhsul artıq mövcuddur'
+        : 'İstehsalçısız bu adda məhsul artıq mövcuddur');
     }
     return trimmed;
   }
@@ -70,8 +77,21 @@ class ProductService {
   }
 
   async create(productData, ownerId, userId) {
-    // Reject duplicate names up front; normalize the descriptive fields.
-    productData.name = await this.assertUniqueName(productData.name, ownerId);
+    // A cleared <select> sends '' — that means "no vendor", not an ObjectId.
+    if (!productData.vendorId) delete productData.vendorId;
+    // An unknown vendorId would mint its own uniqueness bucket and bypass the
+    // duplicate rule, so verify it points at a real, active vendor.
+    if (productData.vendorId
+        && !(await Vendor.exists({ _id: productData.vendorId, isActive: true }))) {
+      throw new Error('Vendor tapılmadı');
+    }
+
+    // Reject a duplicate (ad + İstehsalçı) pair up front; normalize the fields.
+    productData.name = await this.assertUniqueName(
+      productData.name,
+      ownerId,
+      productData.vendorId || null
+    );
     trimDescriptiveFields(productData);
 
     // Auto-generate SKU if not provided
@@ -127,7 +147,7 @@ class ProductService {
     const Category = require('../models/Category');
     const [vendors, existing, categories] = await Promise.all([
       Vendor.find({}, 'name companyName').lean(),
-      Product.find({ isActive: true }, 'name ownerId').lean(),
+      Product.find({ isActive: true }, 'name ownerId vendorId').lean(),
       Category.find({ type: 'product' }, 'name code').lean()
     ]);
     // İstehsalçı matches a vendor by its company name (Şirkət) or its name.
@@ -142,7 +162,10 @@ class ProductService {
       categoryByLabel.set(norm(c.name), c.code);
       categoryByLabel.set(norm(c.code), c.code);
     }
-    const existingKey = new Set(existing.map((p) => `${p.ownerId}|${norm(p.name)}`));
+    // Duplicate key = owner + name + İstehsalçı; '' is the "no vendor" bucket, so
+    // two vendorless rows with the same name still collide.
+    const dupKey = (oid, nm, vid) => `${oid}|${norm(nm)}|${vid ? String(vid) : ''}`;
+    const existingKey = new Set(existing.map((p) => dupKey(p.ownerId, p.name, p.vendorId)));
 
     const valid = [];
     const errors = [];
@@ -160,9 +183,6 @@ class ProductService {
         ownerId = OWNER_IMPORT[norm(r.owner)];
         if (!ownerId) return fail('Sahib tapılmadı (Zaur və ya Ədalət yazın)');
       }
-
-      const key = `${ownerId}|${norm(name)}`;
-      if (seen.has(key) || existingKey.has(key)) return fail('Bu adda məhsul artıq mövcuddur');
 
       let category = 'general';
       if (r.category) {
@@ -185,6 +205,16 @@ class ProductService {
 
       // İstehsalçı → vendor by name (optional; unmatched just leaves it empty).
       const vendorId = r.manufacturer ? vendorByName.get(norm(r.manufacturer)) : undefined;
+
+      // Same name is fine under a different İstehsalçı; same name + same vendor
+      // (or both without one) is a duplicate. Checked here, not earlier, because
+      // the vendor is only known at this point.
+      const key = dupKey(ownerId, name, vendorId);
+      if (seen.has(key) || existingKey.has(key)) {
+        return fail(vendorId
+          ? 'Bu istehsalçıda bu adda məhsul artıq mövcuddur'
+          : 'İstehsalçısız bu adda məhsul artıq mövcuddur');
+      }
 
       valid.push({
         name,
@@ -343,9 +373,28 @@ class ProductService {
       throw new Error('Məhsul tapılmadı');
     }
 
-    // Renaming must not collide with another product of the same owner.
-    if (updateData.name !== undefined) {
-      updateData.name = await this.assertUniqueName(updateData.name, existingProduct.ownerId, id);
+    // '' from a cleared İstehsalçı <select> means "no vendor"; keep it out of the
+    // ObjectId path (Mongoose cannot cast '' to an ObjectId).
+    if (updateData.vendorId === '') updateData.vendorId = null;
+    if (updateData.vendorId
+        && !(await Vendor.exists({ _id: updateData.vendorId, isActive: true }))) {
+      throw new Error('Vendor tapılmadı');
+    }
+
+    // The key is (ownerId, name, vendorId), so a vendor-only change can create a
+    // collision exactly like a rename can — re-check on either.
+    if (updateData.name !== undefined || updateData.vendorId !== undefined) {
+      const finalName = updateData.name !== undefined ? updateData.name : existingProduct.name;
+      const finalVendorId = updateData.vendorId !== undefined
+        ? updateData.vendorId
+        : existingProduct.vendorId;
+      const checkedName = await this.assertUniqueName(
+        finalName,
+        existingProduct.ownerId,
+        finalVendorId || null,
+        id
+      );
+      if (updateData.name !== undefined) updateData.name = checkedName;
     }
     trimDescriptiveFields(updateData);
 
