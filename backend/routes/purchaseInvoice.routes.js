@@ -20,6 +20,10 @@ const createValidation = [
   body('items.*.productId').notEmpty().withMessage('Məhsul seçin').isMongoId(),
   body('items.*.quantity').isInt({ min: 1 }).withMessage('Miqdar minimum 1 olmalıdır'),
   body('items.*.costPrice').isFloat({ min: 0 }).withMessage('Maya dəyəri mənfi ola bilməz'),
+  // Optional: when present the line also sets the product's min sale price.
+  body('items.*.minPrice')
+    .optional({ values: 'falsy' })
+    .isFloat({ min: 0 }).withMessage('Min satış qiyməti mənfi ola bilməz'),
   body('paymentStatus').isIn(['paid', 'partial', 'unpaid']).withMessage('Düzgün ödəniş statusu seçin'),
   body('paidAmount').optional({ values: 'falsy' }).isFloat({ min: 0 }),
   body('dueDate').optional({ values: 'falsy' }).isISO8601(),

@@ -24,9 +24,10 @@ const vendorSchema = new mongoose.Schema({
   contactPerson: {
     type: String
   },
+  // Optional: a locally-bought-from supplier often has no phone on file.
   phone: {
     type: String,
-    required: [true, 'Telefon nömrəsi daxil edin']
+    trim: true
   },
   email: {
     type: String,
