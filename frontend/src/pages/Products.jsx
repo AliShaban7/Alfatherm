@@ -662,15 +662,7 @@ const Products = () => {
                   </div>
                 </div>
                 <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label">Ölkə</label>
-                    <ComboBox
-                      value={formData.country}
-                      onChange={(v) => setFormData({ ...formData, country: v })}
-                      options={options.country}
-                      placeholder="Siyahıdan seçin və ya əlavə edin"
-                    />
-                  </div>
+                  {/* Ölkə məhsul formasından çıxarıldı — vendor yaradılanda seçilir. */}
                   <div className="form-group">
                     <label className="form-label">Rəng</label>
                     <ComboBox
